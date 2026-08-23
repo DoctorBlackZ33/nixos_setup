@@ -1,0 +1,8 @@
+font=Sans 11
+background-color=#202124ee
+text-color=#eeeeee
+border-color=#5e81ac
+border-size=2
+border-radius=8
+padding=10
+default-timeout=5000

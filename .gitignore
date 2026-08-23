@@ -1,0 +1,8 @@
+result
+result-*
+.direnv
+direnv
+*.qcow2
+*.raw
+*.img
+secrets/
