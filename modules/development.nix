@@ -5,12 +5,6 @@
     "nix-command"
     "flakes"
   ];
-  nix.settings.extra-substituters = [
-    "https://attic.xuyh0120.win/lantian"
-  ];
-  nix.settings.extra-trusted-public-keys = [
-    "lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc="
-  ];
   nix.settings.auto-optimise-store = true;
   nix.settings.builders-use-substitutes = true;
 
