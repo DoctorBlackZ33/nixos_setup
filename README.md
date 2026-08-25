@@ -44,6 +44,20 @@ The committed VM account uses the bootstrap password `nixos`; change the
 `hashedPassword` in `modules/base.nix` before exposing the VM beyond the local
 libvirt network.
 
+## Neovim
+
+The committed LazyVim configuration lives under `home/neovim/`. The Home
+Manager Neovim module deploys its Lua files and lockfile, while the wrapper
+provides the editor, language servers, formatters, linters, and other CLI
+tools from Nix. The runtime Lazy.nvim data directory remains user-writable;
+the committed `lazy-lock.json` is seeded there on each Home Manager
+activation.
+
+The port keeps the editor core, UI, Markdown, Nix, JSON, TOML, Git, Yazi, and
+dotfile support. Its Nix language setup uses `nixd`, Alejandra, and Statix.
+Host-only task, remote-SSHFS, Codex, and large language-specific IDE layers
+are intentionally deferred until their VM dependencies are designed.
+
 ## VM storage
 
 The persistent libvirt disk is intentionally outside this Git repository:
