@@ -15,17 +15,17 @@
     nix-cachyos-kernel.url = "https://github.com/xddxdd/nix-cachyos-kernel/archive/dbae8dc454556968710401643aa2c6867d166440.tar.gz";
   };
 
-  outputs = inputs@{
+  outputs = inputs @ {
     self,
     nixpkgs,
     home-manager,
     nix-cachyos-kernel,
     ...
-  }:
-    let
-      system = "x86_64-linux";
+  }: let
+    system = "x86_64-linux";
 
-      mkSystem = kernelProfile: nixpkgs.lib.nixosSystem {
+    mkSystem = kernelProfile:
+      nixpkgs.lib.nixosSystem {
         inherit system;
 
         specialArgs = {
@@ -40,37 +40,56 @@
           ./modules/kernel.nix
           ./modules/rice.nix
           home-manager.nixosModules.home-manager
-          {
+          ({config, ...}: {
             home-manager = {
               useGlobalPkgs = true;
               useUserPackages = true;
               backupFileExtension = "hm-backup";
               users.black = import ./home/black.nix;
-              extraSpecialArgs = { inherit self; };
+              extraSpecialArgs = {
+                inherit self;
+                homeContext = {
+                  rice = {
+                    sourceRoot = config.rice.sourceRoot;
+                    devMode = config.rice.devMode;
+                  };
+                };
+              };
             };
-          }
+          })
         ];
       };
-    in
-    {
-      nixosConfigurations = {
-        nixos-dev = mkSystem "stock";
-        nixos-dev-cachy = mkSystem "cachy";
-      };
-
-      formatter.${system} = nixpkgs.legacyPackages.${system}.alejandra;
-
-      devShells.${system}.default =
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-        in
-        pkgs.mkShell {
-          packages = with pkgs; [
-            alejandra
-            git
-            nil
-            nixd
-          ];
-        };
+  in {
+    nixosConfigurations = {
+      nixos-dev = mkSystem "stock";
+      nixos-dev-cachy = mkSystem "cachy";
     };
+
+    homeConfigurations.black = home-manager.lib.homeManagerConfiguration {
+      pkgs = nixpkgs.legacyPackages.${system};
+      extraSpecialArgs = {
+        homeContext = {
+          rice = {
+            sourceRoot = "/home/black/nixos-system";
+            devMode = false;
+          };
+        };
+      };
+      modules = [./home/black.nix];
+    };
+
+    formatter.${system} = nixpkgs.legacyPackages.${system}.alejandra;
+
+    devShells.${system}.default = let
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+      pkgs.mkShell {
+        packages = with pkgs; [
+          alejandra
+          git
+          nil
+          nixd
+        ];
+      };
+  };
 }
