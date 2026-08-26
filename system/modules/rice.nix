@@ -12,7 +12,7 @@
 
     sourceRoot = lib.mkOption {
       type = lib.types.str;
-      default = "/home/black/nixos-system";
+      default = "/etc/nixos";
       description = "Repository or worktree root used for live rice files.";
     };
   };

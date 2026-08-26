@@ -34,12 +34,4 @@
     noto-fonts
     noto-fonts-color-emoji
   ];
-
-  # The VM has no physical GPU assigned. Keep QEMU itself from using virgl
-  # and force the guest compositor/OpenGL stack onto software rendering.
-  environment.sessionVariables = {
-    LIBGL_ALWAYS_SOFTWARE = "1";
-    WLR_RENDERER_ALLOW_SOFTWARE = "1";
-    WLR_NO_HARDWARE_CURSORS = "1";
-  };
 }

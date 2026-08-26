@@ -24,12 +24,16 @@ From `/etc/nixos` inside the VM:
 sudo nixos-rebuild switch --flake .#nixos-dev
 sudo nixos-rebuild switch --flake .#nixos-dev-cachy
 sudo nixos-rebuild switch --rollback
+nixos-rebuild build-vm --flake .#nixos-dev
 sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
 ```
 
 Every rebuild creates a bootable generation. If a kernel or system change
 does not boot, select an older generation from systemd-boot or use the stock
 kernel target above.
+
+The `build-vm` target uses the VM-only virtio, guest-agent, software-rendering,
+and virtual-machine sizing settings from `hosts/vm/default.nix`.
 
 ## Rice workflow
 
@@ -41,22 +45,8 @@ while sharing the same system modules. The dev mode is limited to rice files;
 the system, packages, services, and kernel remain declarative.
 
 The committed VM account uses the bootstrap password `nixos`; change the
-`hashedPassword` in `modules/base.nix` before exposing the VM beyond the local
-libvirt network.
-
-## Neovim
-
-The committed LazyVim configuration lives under `home/neovim/`. The Home
-Manager Neovim module deploys its Lua files and lockfile, while the wrapper
-provides the editor, language servers, formatters, linters, and other CLI
-tools from Nix. The runtime Lazy.nvim data directory remains user-writable;
-the committed `lazy-lock.json` is seeded there on each Home Manager
-activation.
-
-The port keeps the editor core, UI, Markdown, Nix, JSON, TOML, Git, Yazi, and
-dotfile support. Its Nix language setup uses `nixd`, Alejandra, and Statix.
-Host-only task, remote-SSHFS, Codex, and large language-specific IDE layers
-are intentionally deferred until their VM dependencies are designed.
+`hashedPassword` in `system/modules/base.nix` before exposing the VM
+beyond the local libvirt network.
 
 ## VM storage
 

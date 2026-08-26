@@ -17,11 +17,4 @@
       [ nix-cachyos-kernel.overlays.pinned ]
     else
       [ ];
-
-  boot.initrd.availableKernelModules = [
-    "virtio_pci"
-    "virtio_blk"
-    "virtio_net"
-    "virtio_console"
-  ];
 }

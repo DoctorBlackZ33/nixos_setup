@@ -34,11 +34,11 @@
 
         modules = [
           ./hosts/vm
-          ./modules/base.nix
-          ./modules/desktop.nix
-          ./modules/development.nix
-          ./modules/kernel.nix
-          ./modules/rice.nix
+          ./system/modules/base.nix
+          ./system/modules/desktop.nix
+          ./system/modules/development.nix
+          ./system/modules/kernel.nix
+          ./system/modules/rice.nix
           home-manager.nixosModules.home-manager
           ({config, ...}: {
             home-manager = {
@@ -65,12 +65,14 @@
       nixos-dev-cachy = mkSystem "cachy";
     };
 
+    # Kept for nixd Home Manager option metadata. Integrated NixOS Home
+    # Manager remains the only activation owner.
     homeConfigurations.black = home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.${system};
       extraSpecialArgs = {
         homeContext = {
           rice = {
-            sourceRoot = "/home/black/nixos-system";
+            sourceRoot = "/etc/nixos";
             devMode = false;
           };
         };

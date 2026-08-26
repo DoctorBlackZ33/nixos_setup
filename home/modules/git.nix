@@ -11,6 +11,16 @@ in {
       default = true;
       description = "Enable Git for this home profile.";
     };
+    userName = lib.mkOption {
+      type = lib.types.str;
+      default = "DoctorBlackZ33";
+      description = "The username to commit to git with";
+    };
+    userEmail = lib.mkOption {
+      type = lib.types.str;
+      default = "lukas.zuercher05@gmail.com";
+      description = "The email address used to commit to git";
+    };
   };
 
   config = lib.mkIf cfg.enable {

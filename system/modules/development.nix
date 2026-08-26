@@ -5,7 +5,6 @@
     "nix-command"
     "flakes"
   ];
-  nix.settings.auto-optimise-store = true;
   nix.settings.builders-use-substitutes = true;
 
   nix.gc = {

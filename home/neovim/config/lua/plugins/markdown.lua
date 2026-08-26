@@ -53,6 +53,9 @@ return {
     "iamcco/markdown-preview.nvim",
     init = function()
       vim.g.mkdp_filetypes = { "markdown", "markdown.mdx" }
+      -- CodeCompanion research buffers are Markdown-backed nofile buffers.
+      -- Allow the preview command there so Mermaid blocks can be rendered in
+      -- the browser without adding another diagram plugin.
       vim.g.mkdp_command_for_global = 1
       vim.g.mkdp_preview_options = {
         mkit = {},

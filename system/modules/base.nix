@@ -9,7 +9,6 @@
   networking.firewall.enable = true;
   networking.firewall.allowedTCPPorts = [ 22 ];
 
-  services.qemuGuest.enable = true;
   services.openssh.enable = true;
 
   users.mutableUsers = false;

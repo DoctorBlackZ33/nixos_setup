@@ -1,7 +1,8 @@
-{ lib, pkgs, ... }:
+{ ... }:
 
 {
   networking.hostName = "nixos-dev";
+  services.qemuGuest.enable = true;
 
   # The persistent VM is installed with an EFI system partition labelled
   # nixos-esp and an ext4 root partition labelled nixos-root.
@@ -25,6 +26,14 @@
     "virtio_net"
     "virtio_console"
   ];
+
+  # The VM has no physical GPU assigned. Keep QEMU itself from using virgl
+  # and force the guest compositor/OpenGL stack onto software rendering.
+  environment.sessionVariables = {
+    LIBGL_ALWAYS_SOFTWARE = "1";
+    WLR_RENDERER_ALLOW_SOFTWARE = "1";
+    WLR_NO_HARDWARE_CURSORS = "1";
+  };
 
   # These options are used by nixos-rebuild build-vm as well as the
   # persistent libvirt guest. They do not add host PCI devices.
