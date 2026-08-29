@@ -8,5 +8,6 @@
     ./direnv.nix
     ./zoxide.nix
     ./yazi.nix
+    ./custom_commands.nix
   ];
 }

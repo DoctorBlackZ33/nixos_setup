@@ -16,6 +16,26 @@ The Cachy profile is intentionally host-specific: it assumes the VM exposes
 the host CPU and that the host supports x86-64-v4. Keep `nixos-dev` as the
 fallback on machines with a different CPU feature set.
 
+## Module generator and Nix snippets
+
+The enabled Home Manager defaults install `new-module`, which creates a Home
+module from the repository template without changing imports:
+
+```sh
+new-module home quickshell
+```
+
+The command accepts exactly `home` and a name matching
+`^[a-z][a-z0-9_-]*$`. It refuses existing targets and reports `system` as
+reserved/not implemented. After a successful run, add the printed
+`./quickshell.nix` path manually to the imports in
+`home/modules/defaults.nix`.
+
+In a Nix buffer, type `mkopt` and expand the LuaSnip snippet to insert a
+`lib.mkOption` block. Tab through the option identifier, type, default value,
+and description. LuaSnip supplies snippet expansion while blink.cmp remains
+the completion engine.
+
 ## Rebuild and rollback
 
 From `/etc/nixos` inside the VM:
