@@ -6,5 +6,7 @@
     ./neovim.nix
     ./lazygit.nix
     ./direnv.nix
+    ./zoxide.nix
+    ./yazi.nix
   ];
 }
