@@ -75,3 +75,9 @@ The persistent libvirt disk is intentionally outside this Git repository:
 `/mnt/SSD/VM_Storage/nixos-dev.qcow2`
 
 The existing `win11.qcow2` must not be reused or modified.
+
+## Modular app profiles
+
+`mkSystem` takes explicit `hostModule` and `homeModules`; `home/hosts/vm.nix` supplies VM-only deltas. `myHome.neovim` keeps LazyVim/lazy.nvim and its lock while exposing typed paths, packages, plugin groups, and Lua additions. `myHome.hyprland` emits native mergeable Home Manager settings; NixOS remains the Hyprland package owner. `myHome.quickshell` installs the shared QML demo and typed generated settings without autostart by default.
+
+Validation: `nix flake check --print-build-logs`; build both `nixos-dev` and `nixos-dev-cachy` with `nix build .#nixosConfigurations.<name>.config.system.build.toplevel --print-build-logs`; activate with `sudo nixos-rebuild switch --flake .#nixos-dev --print-build-logs`; roll back with `sudo nixos-rebuild switch --rollback`.

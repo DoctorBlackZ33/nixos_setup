@@ -13,7 +13,6 @@
       else ../../${path};
   };
 in {
-  home.file.".config/hypr/hyprland.conf" = riceFile "rice/hyprland.conf";
   home.file.".config/waybar/config" = riceFile "rice/waybar/config";
   home.file.".config/waybar/style.css" = riceFile "rice/waybar/style.css";
   home.file.".config/mako/config" = riceFile "rice/mako/config";

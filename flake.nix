@@ -24,7 +24,11 @@
   }: let
     system = "x86_64-linux";
 
-    mkSystem = kernelProfile:
+    mkSystem = {
+      hostModule,
+      kernelProfile,
+      homeModules ? [],
+    }:
       nixpkgs.lib.nixosSystem {
         inherit system;
 
@@ -33,7 +37,7 @@
         };
 
         modules = [
-          ./hosts/vm
+          hostModule
           ./system/modules/base.nix
           ./system/modules/desktop.nix
           ./system/modules/development.nix
@@ -45,7 +49,9 @@
               useGlobalPkgs = true;
               useUserPackages = true;
               backupFileExtension = "hm-backup";
-              users.black = import ./home/black.nix;
+              users.black = {
+                imports = [./home/black.nix] ++ homeModules;
+              };
               extraSpecialArgs = {
                 inherit self;
                 homeContext = {
@@ -61,8 +67,16 @@
       };
   in {
     nixosConfigurations = {
-      nixos-dev = mkSystem "stock";
-      nixos-dev-cachy = mkSystem "cachy";
+      nixos-dev = mkSystem {
+        hostModule = ./hosts/vm;
+        kernelProfile = "stock";
+        homeModules = [./home/hosts/vm.nix];
+      };
+      nixos-dev-cachy = mkSystem {
+        hostModule = ./hosts/vm;
+        kernelProfile = "cachy";
+        homeModules = [./home/hosts/vm.nix];
+      };
     };
 
     # Kept for nixd Home Manager option metadata. Integrated NixOS Home
@@ -77,7 +91,7 @@
           };
         };
       };
-      modules = [./home/black.nix];
+      modules = [./home/black.nix ./home/hosts/vm.nix];
     };
 
     formatter.${system} = nixpkgs.legacyPackages.${system}.alejandra;
