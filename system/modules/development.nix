@@ -5,7 +5,6 @@
     "nix-command"
     "flakes"
   ];
-  nix.settings.builders-use-substitutes = true;
 
   nix.gc = {
     automatic = true;
@@ -14,7 +13,6 @@
   };
 
   nix.optimise.automatic = true;
-
   environment.systemPackages = with pkgs; [
     alejandra
     clang

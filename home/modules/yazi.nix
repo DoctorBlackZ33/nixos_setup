@@ -8,7 +8,7 @@ in {
   options.myHome.yazi = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Enable Yazi and its Fish integration.";
     };
 

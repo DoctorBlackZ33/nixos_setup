@@ -1,67 +1,48 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}: let
-  cfg = config.myHome.quickshell;
-  generatedSettings = pkgs.writeText "Generated.qml" ''
-    pragma Singleton
-    import QtQuick
+{ config, lib, pkgs, ... }:
 
-    QtObject {
-      readonly property int barHeight: ${toString cfg.barHeight}
-      readonly property color background: ${builtins.toJSON cfg.background}
-      readonly property color foreground: ${builtins.toJSON cfg.foreground}
-      readonly property string label: ${builtins.toJSON cfg.label}
-    }
-  '';
-  configDirectory = pkgs.runCommand "quickshell-${cfg.activeConfig}" {} ''
-    mkdir -p $out
-    cp -R ${../quickshell/shared}/. $out/
-    cp ${generatedSettings} $out/Generated.qml
-  '';
+let
+  cfg = config.myHome.quickshell;
+  files = lib.mapAttrs' (name: entry:
+    lib.nameValuePair ".config/quickshell/${cfg.activeConfig}/${name}" {
+      inherit (entry) source recursive force;
+    }) cfg.files;
 in {
   options.myHome.quickshell = {
-    enable = lib.mkEnableOption "the shared Quickshell demo";
-    autostart = lib.mkOption {
+    enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Start Quickshell through its Home Manager system user service.";
+      description = "Enable the native Quickshell desktop shell.";
     };
     activeConfig = lib.mkOption {
       type = lib.types.str;
-      default = "shared";
-      description = "Name of the Quickshell configuration to activate.";
+      description = "Name of the resolved Quickshell configuration.";
     };
-    barHeight = lib.mkOption {
-      type = lib.types.ints.positive;
-      default = 32;
-      description = "Height of the generated Quickshell top bar.";
-    };
-    background = lib.mkOption {
-      type = lib.types.str;
-      default = "#1e1e2e";
-      description = "Background color for the Quickshell bar.";
-    };
-    foreground = lib.mkOption {
-      type = lib.types.str;
-      default = "#cdd6f4";
-      description = "Foreground color for the Quickshell label.";
-    };
-    label = lib.mkOption {
-      type = lib.types.str;
-      default = "NixOS";
-      description = "Text rendered by the Quickshell demo bar.";
+    files = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule ({ ... }: {
+        options = {
+          source = lib.mkOption {
+            type = lib.types.path;
+            description = "Resolved source path for this Quickshell entry.";
+          };
+          recursive = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Copy directory contents recursively instead of linking the root.";
+          };
+          force = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Allow Home Manager to replace an existing target.";
+          };
+        };
+      }));
+      default = {};
+      description = "Resolved Quickshell files and directories.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    programs.quickshell = {
-      enable = true;
-      configs.${cfg.activeConfig} = configDirectory;
-      activeConfig = cfg.activeConfig;
-      systemd.enable = cfg.autostart;
-    };
+    home.packages = [ pkgs.quickshell ];
+    home.file = files;
   };
 }

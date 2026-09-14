@@ -8,7 +8,7 @@ in {
   options.myHome.direnv = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Enable direnv for this home profile.";
     };
 

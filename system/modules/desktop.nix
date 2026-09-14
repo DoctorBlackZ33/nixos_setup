@@ -1,17 +1,7 @@
-{ lib, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   programs.hyprland.enable = true;
-
-  services.greetd = {
-    enable = true;
-    settings = {
-      default_session = {
-        user = "black";
-        command = "${pkgs.tuigreet}/bin/tuigreet --time --cmd start-hyprland";
-      };
-    };
-  };
 
   services.pipewire = {
     enable = true;

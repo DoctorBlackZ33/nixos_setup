@@ -1,83 +1,54 @@
-# NixOS system
+# Composable Nix deployment
 
-This repository is the source of truth for the first NixOS development VM.
+This repository uses flake-parts registries for reusable NixOS capabilities,
+Home Manager modules, profiles, and user identities. Deployments are the only
+composition boundary that binds a host, account, source layout, and output.
 
-The VM is intentionally independent from `/home/black/end4_custom`. It starts
-with a small software-rendered Hyprland desktop and a stock NixOS kernel.
-The Cachy-derived kernel configuration is a second profile and must keep the
-stock kernel available as a fallback.
+## Outputs
 
-## Build targets
+- `nixos-dev`: VM host with the stock kernel.
+- `nixos-dev-cachy`: VM host with the pinned CachyOS kernel.
+- `homeConfigurations.black`: generic standalone black home.
+- `homeConfigurations."black@vm"`: production VM home with store-backed sources.
+- `homeConfigurations."black@vm-live"`: VM hot-reload home with `/etc/nixos`
+  out-of-store sources.
 
-- `nixos-dev`: stock NixOS kernel, baseline VM
-- `nixos-dev-cachy`: CachyOS-derived LTO/x86-64-v4 kernel profile
+NixOS outputs are host-only; Home Manager is standalone and evaluated independently.
+Non-NixOS support means Linux with Nix and an existing
+black account.
 
-The Cachy profile is intentionally host-specific: it assumes the VM exposes
-the host CPU and that the host supports x86-64-v4. Keep `nixos-dev` as the
-fallback on machines with a different CPU feature set.
+## Source layout
 
-## Module generator and Nix snippets
+- `system/modules/` contains reusable NixOS policy and developer outputs.
+- `system/hosts/vm/` contains the VM host registry entry and hardware facts.
+- `home/modules/` and `home/profiles/` contain reusable Home Manager entries.
+- `home/users/black/` contains the black identity and user-owned sources.
+- `deployments/` contains concrete system and standalone home compositions.
+- Shared QML and Hyprland sources live under `home/config/`; VM-specific
+  components live under `deployments/vm/black/config/`.
 
-The enabled Home Manager defaults install `new-module`, which creates a Home
-module from the repository template without changing imports:
+## Commands
 
-```sh
-new-module home quickshell
-```
-
-The command accepts exactly `home` and a name matching
-`^[a-z][a-z0-9_-]*$`. It refuses existing targets and reports `system` as
-reserved/not implemented. After a successful run, add the printed
-`./quickshell.nix` path manually to the imports in
-`home/modules/defaults.nix`.
-
-In a Nix buffer, type `mkopt` and expand the LuaSnip snippet to insert a
-`lib.mkOption` block. Tab through the option identifier, type, default value,
-and description. LuaSnip supplies snippet expansion while blink.cmp remains
-the completion engine.
-
-## Rebuild and rollback
-
-From `/etc/nixos` inside the VM:
+From the VM checkout, inspect the output graph:
 
 ```sh
-sudo nixos-rebuild switch --flake .#nixos-dev
-sudo nixos-rebuild switch --flake .#nixos-dev-cachy
-sudo nixos-rebuild switch --rollback
-nixos-rebuild build-vm --flake .#nixos-dev
-sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
+nix flake show path:/etc/nixos
+nix flake check --no-build --no-update-lock-file path:/etc/nixos --print-build-logs
 ```
 
-Every rebuild creates a bootable generation. If a kernel or system change
-does not boot, select an older generation from systemd-boot or use the stock
-kernel target above.
+Build systems without switching:
 
-The `build-vm` target uses the VM-only virtio, guest-agent, software-rendering,
-and virtual-machine sizing settings from `hosts/vm/default.nix`.
+```sh
+nixos-rebuild build --flake path:/etc/nixos#nixos-dev
+nixos-rebuild build --flake path:/etc/nixos#nixos-dev-cachy
+```
 
-## Rice workflow
+Build or activate standalone homes as user `black`:
 
-Rice files under `rice/` are immutable Home Manager sources by default. Set
-`rice.devMode = true` in the VM host module only when deliberately testing
-live files from this repository. `rice.sourceRoot` can point at another Git
-worktree, allowing separate rice experiments or VMs to use different projects
-while sharing the same system modules. The dev mode is limited to rice files;
-the system, packages, services, and kernel remain declarative.
-
-The committed VM account uses the bootstrap password `nixos`; change the
-`hashedPassword` in `system/modules/base.nix` before exposing the VM
-beyond the local libvirt network.
-
-## VM storage
-
-The persistent libvirt disk is intentionally outside this Git repository:
-
-`/mnt/SSD/VM_Storage/nixos-dev.qcow2`
-
-The existing `win11.qcow2` must not be reused or modified.
-
-## Modular app profiles
-
-`mkSystem` takes explicit `hostModule` and `homeModules`; `home/hosts/vm.nix` supplies VM-only deltas. `myHome.neovim` keeps LazyVim/lazy.nvim and its lock while exposing typed paths, packages, plugin groups, and Lua additions. `myHome.hyprland` emits native mergeable Home Manager settings; NixOS remains the Hyprland package owner. `myHome.quickshell` installs the shared QML demo and typed generated settings without autostart by default.
-
-Validation: `nix flake check --print-build-logs`; build both `nixos-dev` and `nixos-dev-cachy` with `nix build .#nixosConfigurations.<name>.config.system.build.toplevel --print-build-logs`; activate with `sudo nixos-rebuild switch --flake .#nixos-dev --print-build-logs`; roll back with `sudo nixos-rebuild switch --rollback`.
+```sh
+nix build path:/etc/nixos#homeConfigurations.black.activationPackage
+nix build path:/etc/nixos#homeConfigurations."black@vm".activationPackage
+nix build path:/etc/nixos#homeConfigurations."black@vm-live".activationPackage
+home-manager switch --flake path:/etc/nixos#black@vm
+home-manager switch --flake path:/etc/nixos#black@vm-live
+```

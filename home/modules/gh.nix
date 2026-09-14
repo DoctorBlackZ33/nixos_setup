@@ -8,7 +8,7 @@ in {
   options.myHome.gh = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Enable gh for Github CLI interactions";
     };
 
@@ -24,7 +24,7 @@ in {
   config = lib.mkIf cfg.enable {
     programs.gh = {
       enable = true;
-      gitCredentialHelper = cfg.gitCredentialHelper;
+      gitCredentialHelper.enable = cfg.gitCredentialHelper.enable;
     };
   };
 }

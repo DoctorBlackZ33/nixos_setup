@@ -1,0 +1,4 @@
+-- Shared session startup.
+hl.on("hyprland.start", function ()
+  hl.exec_cmd("mako")
+end)

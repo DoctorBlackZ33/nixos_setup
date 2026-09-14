@@ -8,7 +8,7 @@ in {
   options.myHome.zoxide = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Enable Zoxide and its Fish integration.";
     };
 
