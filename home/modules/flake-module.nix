@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, inputs, ... }:
 
 let
   modules = config.flake.modules.homeManager;
@@ -15,7 +15,8 @@ in {
     module-hyprland = ./hyprland.nix;
     module-lazygit = ./lazygit.nix;
     module-mako = ./mako.nix;
-    module-neovim = ./neovim.nix;
+    module-nvf = inputs.nvf.homeManagerModules.default;
+    module-nvf-config = ./nvf.nix;
     module-quickshell = ./quickshell.nix;
     module-yazi = ./yazi.nix;
     module-zoxide = ./zoxide.nix;
@@ -33,7 +34,8 @@ in {
         modules.module-hyprland
         modules.module-lazygit
         modules.module-mako
-        modules.module-neovim
+        modules.module-nvf
+        modules.module-nvf-config
         modules.module-quickshell
         modules.module-yazi
         modules.module-zoxide

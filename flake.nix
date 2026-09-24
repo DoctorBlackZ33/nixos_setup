@@ -9,6 +9,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    nvf = {
+      url = "github:NotAShelf/nvf";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nix-cachyos-kernel.url = "https://github.com/xddxdd/nix-cachyos-kernel/archive/dbae8dc454556968710401643aa2c6867d166440.tar.gz";
     flake-parts.url = "github:hercules-ci/flake-parts";
   };

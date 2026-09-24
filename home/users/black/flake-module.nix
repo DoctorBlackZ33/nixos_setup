@@ -16,6 +16,8 @@ in {
       modules.profile-desktop
     ];
 
+    myHome.nvf.enable = true;
+
     home.username = identity.username;
     home.homeDirectory = identity.homeDirectory;
     home.stateVersion = identity.stateVersion;
