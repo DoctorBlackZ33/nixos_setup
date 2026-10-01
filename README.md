@@ -117,7 +117,25 @@ home-manager switch --flake 'path:/home/black/nixos#black@desktop' \
 ```
 
 Use `laptop` / `black@laptop` on the laptop host. NixOS and Home Manager
-switches are independent and non-atomic. This architecture task performs no
-activation or deployment. Generated settings can be evaluated and built here,
-but visual clock/compositor behavior requires a graphical session and is not
-verified by a build.
+switches are independent and non-atomic. Building the outputs does not activate
+either profile or prove that a graphical session can render.
+
+## VM display and startup lifecycle
+
+The VM's persistent display hardware belongs to its libvirt domain, not this
+NixOS/Home Manager flake. The `virtualisation.vmVariant` settings in
+`system/hosts/vm/hardware.nix` configure the `nixos-rebuild build-vm` output;
+they do not add or change PCI devices in an already-defined libvirt domain.
+The libvirt domain must attach a video device (virtio GPU) and expose a
+host-only graphical console. `hardware.graphics.enable` and software-rendering
+environment variables configure the guest's software stack, but cannot create
+missing display hardware.
+
+On boot, system-level greetd starts tuigreet on `tty1` with
+`start-hyprland` as the post-authentication command. Hyprland starts only after
+the user authenticates; Quickshell is not expected at the greeter. The
+independent Home Manager profile installs the generated Hyprland Lua loader,
+Quickshell config, and the startup hook that runs
+`quickshell --config black` once Hyprland starts. A NixOS switch does not
+activate Home Manager; switch `black@desktop` separately before logging into
+the graphical session.
