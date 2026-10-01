@@ -1,24 +1,24 @@
 import QtQuick
 import Quickshell
-import "deployment"
+import "."
 import "shared/profiles"
 import "shared/themes"
 import "user"
 
-Item {
+ShellRoot {
     DefaultTheme { id: defaults }
+    DesktopPolicy { id: role }
 
     UserSettings {
         id: settings
         theme: defaults
+        label: role.label
+        barHeight: defaults.barHeight
+        clockFormat: role.clockFormat
+        clockPrecision: role.clockPrecision
     }
 
-    BlackShell {
-        id: deployment
+    DesktopShell {
         config: settings
-
-        DesktopShell {
-            config: deployment.config
-        }
     }
 }

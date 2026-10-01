@@ -175,10 +175,10 @@ in {
             settings.nixd = {
               # Evaluate against this VM's pinned flake input rather than a
               # mutable channel or a second nixpkgs installation.
-              nixpkgs.expr = "let flake = builtins.getFlake \"/etc/nixos\"; in import flake.inputs.nixpkgs { }";
+              nixpkgs.expr = "let flake = builtins.getFlake \"/home/black/nixos\"; in import flake.inputs.nixpkgs { }";
               options = {
-                nixos.expr = "(builtins.getFlake \"/etc/nixos\").nixosConfigurations.nixos-dev.options";
-                home_manager.expr = "(builtins.getFlake \"/etc/nixos\").homeConfigurations.\"black@vm\".options";
+                nixos.expr = "(builtins.getFlake \"/home/black/nixos\").nixosConfigurations.desktop.options";
+                home_manager.expr = "(builtins.getFlake \"/home/black/nixos\").homeConfigurations.\"black@desktop\".options";
               };
             };
           };

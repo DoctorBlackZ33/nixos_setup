@@ -14,6 +14,6 @@ QtObject {
     property int fontSize: 13
     property int padding: 10
     property int spacing: 4
-    property string clockFormat: "yyyy-MM-dd HH:mm:ss"
-    property int clockPrecision: SystemClock.Seconds
+    required property string clockFormat
+    required property int clockPrecision
 }

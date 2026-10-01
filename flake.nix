@@ -1,5 +1,5 @@
 {
-  description = "Black's composable NixOS and Home Manager development environment";
+  description = "Black's modular desktop and laptop NixOS and Home Manager configuration";
 
   inputs = {
     nixpkgs.url = "https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz";
@@ -25,9 +25,11 @@
         inputs.flake-parts.flakeModules.modules
         inputs.home-manager.flakeModules.home-manager
         ./system/modules/flake-module.nix
+        ./system/accounts/flake-module.nix
         ./system/hosts/vm/flake-module.nix
         ./home/modules/flake-module.nix
         ./home/profiles/flake-module.nix
+        ./home/policies/flake-module.nix
         ./home/users/black/flake-module.nix
         ./deployments/flake-module.nix
       ];

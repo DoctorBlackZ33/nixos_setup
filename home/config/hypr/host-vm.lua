@@ -1,4 +1,4 @@
--- VM device values intentionally load last and override shared defaults.
+-- VM device values intentionally load after shared defaults.
 
 hl.monitor({
   output = "",
