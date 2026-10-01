@@ -2,53 +2,41 @@
 
 let
   modules = config.flake.modules.homeManager;
-  identity = {
+  homeTarget = {
     username = "black";
     homeDirectory = "/home/black";
     stateVersion = "26.05";
   };
 in {
-  flake.modules.homeManager.user-black = {
-    imports = [
-      modules.module-set
-      modules.profile-base
-      modules.profile-development
-      modules.profile-desktop
-    ];
-
-    myHome.nvf.enable = true;
-
-    home.username = identity.username;
-    home.homeDirectory = identity.homeDirectory;
-    home.stateVersion = identity.stateVersion;
-    home.sessionVariables = {
-      EDITOR = "nvim";
-      VISUAL = "nvim";
+  flake.modules.homeManager = {
+    home-black = {
+      home.username = homeTarget.username;
+      home.homeDirectory = homeTarget.homeDirectory;
+      home.stateVersion = homeTarget.stateVersion;
     };
 
-    programs.git.settings = {
-      user.name = "DoctorBlack Z 33";
-      user.email = "72605982+DoctorBlackZ33@users.noreply.github.com";
-      init.defaultBranch = "main";
-    };
-  };
+    preferences-black = {
+      imports = [
+        modules.module-set
+        modules.profile-base
+        modules.profile-development
+        modules.profile-desktop
+      ];
 
-  flake.modules.nixos.user-black-account = { pkgs, ... }:
-    {
-      users.mutableUsers = false;
-      users.users.${identity.username} = {
-        isNormalUser = true;
-        description = "Black";
-        shell = pkgs.fish;
-        extraGroups = [
-          "wheel"
-          "networkmanager"
-          "video"
-          "input"
-        ];
-        # Bootstrap-only VM password. Change this value before using the VM
-        # for anything sensitive.
-        hashedPassword = "$6$nixosdev$QyqUycwLZRiiEsmZ4jzHtrAwIZ8EdPikwJnmrFAygYLP9/LO2wGcFGF4UrykL8niiDRN76b8ayhPtTAG/Pj7x1";
+      myHome.nvf.enable = true;
+
+      home.sessionVariables = {
+        EDITOR = "nvim";
+        VISUAL = "nvim";
+      };
+
+      programs.git.settings = {
+        user.name = "DoctorBlack Z 33";
+        user.email = "72605982+DoctorBlackZ33@users.noreply.github.com";
+        init.defaultBranch = "main";
       };
     };
+
+    sources-black = ./sources.nix;
+  };
 }

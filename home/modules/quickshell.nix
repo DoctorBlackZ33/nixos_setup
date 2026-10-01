@@ -6,6 +6,16 @@ let
     lib.nameValuePair ".config/quickshell/${cfg.activeConfig}/${name}" {
       inherit (entry) source recursive force;
     }) cfg.files;
+  policyFile = ''
+    import QtQuick
+    import Quickshell
+
+    QtObject {
+        readonly property string label: ${builtins.toJSON cfg.label}
+        readonly property int clockPrecision: ${cfg.clockPrecision}
+        readonly property string clockFormat: ${builtins.toJSON cfg.clockFormat}
+    }
+  '';
 in {
   options.myHome.quickshell = {
     enable = lib.mkOption {
@@ -16,6 +26,21 @@ in {
     activeConfig = lib.mkOption {
       type = lib.types.str;
       description = "Name of the resolved Quickshell configuration.";
+    };
+    clockPrecision = lib.mkOption {
+      type = lib.types.str;
+      default = "SystemClock.Minutes";
+      description = "Quickshell SystemClock precision enum member to render.";
+    };
+    clockFormat = lib.mkOption {
+      type = lib.types.str;
+      default = "yyyy-MM-dd HH:mm";
+      description = "Qt date-time format string used to render the clock.";
+    };
+    label = lib.mkOption {
+      type = lib.types.str;
+      default = "desktop";
+      description = "Role label shown in the desktop bar.";
     };
     files = lib.mkOption {
       type = lib.types.attrsOf (lib.types.submodule ({ ... }: {
@@ -43,6 +68,8 @@ in {
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.quickshell ];
-    home.file = files;
+    home.file = files // {
+      ".config/quickshell/${cfg.activeConfig}/DesktopPolicy.qml".text = policyFile;
+    };
   };
 }

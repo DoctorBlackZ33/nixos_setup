@@ -1,86 +1,123 @@
-# Composable Nix deployment
+# Modular NixOS and Home Manager configuration
 
-This repository uses flake-parts registries for reusable NixOS capabilities,
-Home Manager modules, profiles, and user identities. Deployments are the only
-composition boundary that binds a host, account, source layout, and output.
+This flake exposes two alternate NixOS configurations for the same simulated
+VM hardware, plus independent standalone Home Manager configurations for
+`black`. Desktop/laptop differences come from role policies. Home Manager
+outputs are independent and do not read `osConfig`.
+
+## Architecture boundaries
+
+- `system/modules/` contains reusable NixOS policy and per-system tools.
+- `system/hosts/vm/` owns the shared VM hardware, host settings, login session,
+  and distinct desktop/laptop host names.
+- `system/accounts/` owns the NixOS OS login account; it does not define Home
+  Manager identity or personal preferences.
+- `home/modules/` defines typed Home Manager feature options and their guarded
+  `mkIf` implementations.
+- `home/profiles/` composes reusable base, desktop, and development features.
+- `home/users/black/` defines the separate Home Manager target (`black`,
+  `/home/black`, state version `26.05`), shared personal preferences, and a
+  centralized source layout.
+- `home/policies/` selects the role's clock precision, Qt format string,
+  bar label, and floating-toggle chord. The label, format, and chord are
+  strings; precision is a string naming the Quickshell `SystemClock` member
+  emitted into QML.
+- Root `flake.nix` imports explicit flake-module registries. Their
+  `flake.modules` entries are reusable building blocks, not runnable hosts.
+- `deployments/` consumes those registry entries to construct the runnable
+  NixOS and standalone Home Manager outputs.
+
+The desktop uses `SystemClock.Seconds`, a seconds-format clock, and
+`SUPER + SPACE` to toggle floating windows. The laptop uses
+`SystemClock.Minutes`, a minutes-format clock, and `SUPER + V`. The old shared
+`SUPER + V` floating binding is removed and generated once from the role
+policy. Both alternate hosts retain the existing VM hardware, software-rendering
+settings, services, packages, and NixOS state version. The pinned inputs and
+`flake.lock` are unchanged.
 
 ## Outputs
 
-- `nixos-dev`: VM host with the stock kernel. This is the host-only NixOS output.
-- `nixos-dev-cachy`: VM host with the pinned CachyOS kernel.
-- `homeConfigurations.black`: generic standalone black home.
-- `homeConfigurations."black@vm"`: standalone Home Manager home for the production VM, with store-backed sources.
-- `homeConfigurations."black@vm-live"`: VM hot-reload home with `/etc/nixos`
-  out-of-store sources.
+- `nixosConfigurations.desktop` (`nixos-rebuild` selector `desktop`): simulated
+  desktop host named `nixos-desktop`, stock kernel.
+- `nixosConfigurations.laptop` (`nixos-rebuild` selector `laptop`): simulated
+  laptop host named `nixos-laptop`, stock kernel.
+- `homeConfigurations."black@desktop"`: standalone desktop Home Manager
+  generation.
+- `homeConfigurations."black@laptop"`: standalone laptop Home Manager
+  generation.
 
-NixOS outputs are host-only; Home Manager outputs are standalone and evaluated
-independently. Non-NixOS support means Linux with Nix and an existing
-black account.
+NixOS outputs are host-only; each Home Manager output can be evaluated and
+built independently. They are separate generations and activation commands.
 
-## Source layout
+## Evaluate and inspect
 
-- `system/modules/` contains reusable NixOS policy and developer outputs.
-- `system/hosts/vm/` contains the VM host registry entry and hardware facts.
-- `home/modules/` and `home/profiles/` contain reusable Home Manager entries.
-- `home/users/black/` contains the black identity and user-owned sources.
-- `deployments/` contains concrete system and standalone home compositions.
-- Shared QML and Hyprland sources live under `home/config/`; VM-specific
-  components live under `deployments/vm/black/config/`.
-
-## Commands
-
-Run these commands on the target VM as user `black`. The `nixos-dev` output is
-the host-only NixOS configuration; `black@vm` is a standalone Home Manager
-configuration. They are separate outputs and activate independently.
-
-Inspect the output graph without changing the lock file:
+Run from `/home/black/nixos` as user `black`:
 
 ```sh
-nix flake show --no-update-lock-file --no-write-lock-file path:/etc/nixos
-nix flake check --no-build --no-update-lock-file --no-write-lock-file path:/etc/nixos --print-build-logs
+nix flake show --no-update-lock-file --no-write-lock-file path:/home/black/nixos
+nix eval --json --no-update-lock-file --no-write-lock-file \
+  path:/home/black/nixos#nixosConfigurations --apply builtins.attrNames
+nix eval --json --no-update-lock-file --no-write-lock-file \
+  path:/home/black/nixos#homeConfigurations --apply builtins.attrNames
+
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#nixosConfigurations.desktop.config.networking.hostName'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#nixosConfigurations.laptop.config.networking.hostName'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@desktop".config.myHome.hyprland.floatingToggleChord'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@desktop".config.myHome.quickshell.clockPrecision'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".config.myHome.hyprland.floatingToggleChord'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".config.myHome.quickshell.clockPrecision'
 ```
 
-Build both derivations without activating either one:
+Inspect the actual generated compositor loaders and Quickshell policy files:
 
 ```sh
-nixos-rebuild build --flake 'path:/etc/nixos#nixos-dev' \
-  --no-update-lock-file --no-write-lock-file
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@desktop".config.home.file.".config/hypr/hyprland.lua".text'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".config.home.file.".config/hypr/hyprland.lua".text'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@desktop".config.home.file.".config/quickshell/black/DesktopPolicy.qml".text'
+nix eval --raw --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".config.home.file.".config/quickshell/black/DesktopPolicy.qml".text'
+```
+
+## Build without activation
+
+Build both exact NixOS toplevels and both independent Home Manager activation
+packages. These commands do not activate either generation or update the lock
+file:
+
+```sh
 nix build --no-link --no-update-lock-file --no-write-lock-file \
-  'path:/etc/nixos#homeConfigurations."black@vm".activationPackage'
+  'path:/home/black/nixos#nixosConfigurations.desktop.config.system.build.toplevel'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#nixosConfigurations.laptop.config.system.build.toplevel'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@desktop".activationPackage'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".activationPackage'
 ```
 
-`--flake` selects the flake and output. `--no-update-lock-file` forbids lock
-file updates, and `--no-write-lock-file` prevents writing a generated lock
-file. `--no-link` avoids creating a result symlink for the Home Manager build.
-The `nixos-rebuild build` and `nix build` commands only build; neither activates
-its result.
+## Use (activation is intentionally separate)
 
-Switch NixOS only (sudo is required for this activation):
+Only activate the matching profile on its intended host. NixOS activation
+requires `sudo`; Home Manager runs as `black` without `sudo`:
 
 ```sh
-sudo nixos-rebuild switch --flake 'path:/etc/nixos#nixos-dev' \
+sudo nixos-rebuild switch --flake 'path:/home/black/nixos#desktop' \
   --no-update-lock-file --no-write-lock-file
-```
-
-Switch standalone Home Manager only (never use sudo):
-
-```sh
-home-manager switch --flake 'path:/etc/nixos#black@vm' \
+home-manager switch --flake 'path:/home/black/nixos#black@desktop' \
   --no-write-lock-file
 ```
 
-Run both switches sequentially:
-
-```sh
-sudo nixos-rebuild switch --flake 'path:/etc/nixos#nixos-dev' \
-  --no-update-lock-file --no-write-lock-file &&
-home-manager switch --flake 'path:/etc/nixos#black@vm' \
-  --no-write-lock-file
-```
-
-There is no atomic combined activation: these are two separate commands, and
-each activation takes effect independently. With `&&`, Home Manager is not
-attempted if the NixOS switch fails. If NixOS succeeds but Home Manager fails,
-the NixOS switch remains active while Home Manager stays at its previous
-generation. Run `home-manager` as `black` without sudo; use sudo only on
-`nixos-rebuild`.
+Use `laptop` / `black@laptop` on the laptop host. NixOS and Home Manager
+switches are independent and non-atomic. This architecture task performs no
+activation or deployment. Generated settings can be evaluated and built here,
+but visual clock/compositor behavior requires a graphical session and is not
+verified by a build.

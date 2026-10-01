@@ -68,7 +68,7 @@ Use parentheses around mixed arithmetic, list concatenation, updates, and condit
 | Derivation | A derivation is a lazy recipe/value (usually from `pkgs.stdenv.mkDerivation`); evaluation creates a `.drv` plan, while realization (`nix build`, a system switch, or a dependency demand) executes it and produces store paths. A derivation is an attr set with `type = "derivation"`. |
 | Evaluation vs build | Evaluation computes the expression/output graph and may fetch/evaluate source inputs; realization builds derivations; activation performs system/home side effects. `nix eval` does not build; `nix build` does not activate. |
 | Purity | Flake evaluation is locked and normally pure: undeclared filesystem/network/environment dependencies are rejected or ignored. `--impure` permits ambient values such as `NIX_PATH` and environment variables. `builtins.pathExists` can inspect declared/local paths; a path source can be copied into the store, while `mkOutOfStoreSymlink` intentionally keeps a live filesystem path. |
-| String vs path | A path literal carries source-location semantics and is eligible for store copying; a string containing `/etc/nixos/...` is only text. Convert deliberately with `toString`/`builtins.toPath` where supported. |
+| String vs path | A path literal carries source-location semantics and is eligible for store copying; a string containing `/home/black/nixos/...` is only text. Convert deliberately with `toString`/`builtins.toPath` where supported. |
 | Module file vs module value | `./x.nix` is a path value; `imports = [ ./x.nix ]` asks the module system to import it. A module value can instead be `{ config, lib, ... }: { ... }`. |
 
 ## 2. Flakes and command-line lookup
@@ -77,12 +77,12 @@ Use parentheses around mixed arithmetic, list concatenation, updates, and condit
 
 | Form | Interpretation |
 |---|---|
-| `path:/etc/nixos` | Explicit local flake URI; avoids ambiguity with a bare path. |
-| `path:/etc/nixos#nixosConfigurations.nixos-dev` | URI plus `#` attribute selector; selectors traverse attributes with dots. Quote selectors containing `@`, spaces, or shell metacharacters. |
+| `path:/home/black/nixos` | Explicit local flake URI; avoids ambiguity with a bare path. |
+| `path:/home/black/nixos#nixosConfigurations.desktop` | URI plus `#` attribute selector; selectors traverse attributes with dots. Quote selectors containing `@`, spaces, or shell metacharacters. |
 | `github:owner/repo` / `github:owner/repo/ref` | GitHub shorthand; `ref` can be branch, tag, or revision. |
 | `git+https://host/repo?ref=main&rev=...` | Explicit Git transport and query parameters; `rev` pins content, `ref` names the requested ref. |
 | `./.` / `path:.` | Local flake path; lock metadata records a content hash/mtime and dirty-tree status as applicable. |
-| `#attr` | Output selector shorthand when the flake URI is supplied separately (for example `nix build .#packages.x86_64-linux.default`). In shell, quote `path:/etc/nixos#homeConfigurations."black@vm".activationPackage`. |
+| `#attr` | Output selector shorthand when the flake URI is supplied separately (for example `nix build .#packages.x86_64-linux.default`). In shell, quote `path:/home/black/nixos#homeConfigurations."black@desktop".activationPackage`. |
 
 Standard output conventions: `packages.<system>.<name>` (buildable packages), `apps.<system>.<name>` (runnable apps), `devShells.<system>.<name>`, `checks.<system>.<name>`, `formatter.<system>`, and `templates`. This repository additionally exposes `nixosConfigurations`, `homeConfigurations`, and flake-parts registries under `modules`; those are valid custom attrs but are not all classified by `nix flake show` as standard buildable outputs.
 
@@ -113,52 +113,51 @@ Standard output conventions: `packages.<system>.<name>` (buildable packages), `a
 Copy-paste read-only output queries:
 
 ```sh
-nix flake show --no-update-lock-file --no-write-lock-file path:/etc/nixos
-nix flake metadata --no-update-lock-file --no-write-lock-file path:/etc/nixos
+nix flake show --no-update-lock-file --no-write-lock-file path:/home/black/nixos
+nix flake metadata --no-update-lock-file --no-write-lock-file path:/home/black/nixos
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/etc/nixos#nixosConfigurations --apply builtins.attrNames
+  path:/home/black/nixos#nixosConfigurations --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/etc/nixos#homeConfigurations --apply builtins.attrNames
+  path:/home/black/nixos#homeConfigurations --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/etc/nixos#modules.homeManager --apply builtins.attrNames
+  path:/home/black/nixos#modules.homeManager --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/etc/nixos#modules.nixos --apply builtins.attrNames
+  path:/home/black/nixos#modules.nixos --apply builtins.attrNames
 ```
 
 Build without activation or lock writes:
 
 ```sh
-nixos-rebuild build --flake 'path:/etc/nixos#nixos-dev' \
+nixos-rebuild build --flake 'path:/home/black/nixos#desktop' \
+  --no-update-lock-file --no-write-lock-file
+nixos-rebuild build --flake 'path:/home/black/nixos#laptop' \
   --no-update-lock-file --no-write-lock-file
 nix build --no-link --no-update-lock-file --no-write-lock-file \
-  'path:/etc/nixos#homeConfigurations."black@vm".activationPackage'
+  'path:/home/black/nixos#homeConfigurations."black@desktop".activationPackage'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/nixos#homeConfigurations."black@laptop".activationPackage'
 ```
 
 Enter the repository's per-system development shell (the `devShells.x86_64-linux.default` output):
 
 ```sh
-nix develop --no-update-lock-file --no-write-lock-file path:/etc/nixos
+nix develop --no-update-lock-file --no-write-lock-file path:/home/black/nixos
 ```
 
-Activate the two independent configurations sequentially:
+Activate the matching host and Home Manager generation separately. They have
+independent activation and are not an atomic combined operation:
 
 ```sh
-sudo nixos-rebuild switch --flake 'path:/etc/nixos#nixos-dev' \
+sudo nixos-rebuild switch --flake 'path:/home/black/nixos#desktop' \
   --no-update-lock-file --no-write-lock-file
-home-manager switch --flake 'path:/etc/nixos#black@vm' \
+home-manager switch --flake 'path:/home/black/nixos#black@desktop' \
   --no-write-lock-file
 ```
 
-`nixos-dev` is host-only NixOS; Home Manager is standalone and evaluated/activated independently. A combined shell sequence is sequential and non-atomic:
-
-```sh
-sudo nixos-rebuild switch --flake 'path:/etc/nixos#nixos-dev' \
-  --no-update-lock-file --no-write-lock-file &&
-home-manager switch --flake 'path:/etc/nixos#black@vm' \
-  --no-write-lock-file
-```
-
-With `&&`, a failed NixOS switch prevents the Home Manager command; if NixOS succeeds and Home Manager fails, the NixOS generation remains active while the home remains at its prior generation. Run `home-manager` as `black`, without `sudo`.
+Use `laptop` and `black@laptop` on the laptop host. If NixOS activation succeeds
+but Home Manager activation fails, the system generation remains active while
+the home stays at its previous generation. Run `home-manager` as `black`
+without `sudo`.
 
 ## 3. flake-parts semantics
 
@@ -170,9 +169,9 @@ With `&&`, a failed NixOS switch prevents the Home Manager command; if NixOS suc
 |---|---|---|---|
 | Top-level flake-parts module | `config`, `options`, `lib`, `inputs`, `self`, `getSystem`, `moduleWithSystem`, `withSystem`; `system`/`pkgs` are not generally available here. | Global flake-parts options, including `config.flake`, `config.perSystem`, `config.systems`, and registries. | All `flake-module.nix` files define registries or outputs here. |
 | `perSystem = { system, pkgs, ... }: { ... }` | `system`, `pkgs`, `self'`, `inputs'`, plus module `config`/`lib`; only explicitly named function parameters are passed. | The current system's per-system option namespace. | `system/modules/flake-module.nix` defines `formatter` and `devShells.default`. |
-| `withSystem "x86_64-linux" ({ pkgs, system, ... }: expr)` | Per-system context selected explicitly; `pkgs` is the pinned nixpkgs package set for that system. | The selected per-system context while constructing `expr`. | Deployments construct all three standalone Home Manager configurations. |
-| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | `host-vm`, `system-*`, `kernel-*`, and `user-black-account`. |
-| Home Manager module | `config`, `options`, `lib`, `pkgs`, and Home Manager special args. | Home Manager option tree (`home`, `programs`, `myHome`, etc.). | `user-black`, profiles, and `home/modules/*`. |
+| `withSystem "x86_64-linux" ({ pkgs, system, ... }: expr)` | Per-system context selected explicitly; `pkgs` is the pinned nixpkgs package set for that system. | The selected per-system context while constructing `expr`. | Deployments construct two standalone Home Manager configurations. |
+| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | `host-vm-common`, `host-desktop`, `host-laptop`, `system-*`, `kernel-*`, and `account-black`. |
+| Home Manager module | `config`, `options`, `lib`, `pkgs`, and Home Manager special args. | Home Manager option tree (`home`, `programs`, `myHome`, etc.). | `home-black`, `preferences-black`, profiles, policies and `home/modules/*`. |
 
 `inputs` is the root input set; `self` is the recursively defined final flake output set. In a per-system scope, `inputs'`/`self'` are system-scoped projections. `withSystem` is the supported bridge from a top-level output definition to `pkgs` and other per-system values; do not assume top-level `pkgs` or `system`.
 
@@ -200,102 +199,84 @@ Common flake-parts failure modes: using `pkgs`/`system` at top level instead of 
 
 ### Root and input graph
 
-`/etc/nixos/flake.nix` declares these locked inputs:
+`/home/black/nixos/flake.nix` declares these locked inputs; their URLs and lock
+entries are retained:
 
 | Input | URL / relation | Consumers |
 |---|---|---|
-| `nixpkgs` | `https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz` | `nixosSystem`, `pkgs`, system and Home Manager packages. |
-| `home-manager` | `https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz`; `inputs.nixpkgs.follows = "nixpkgs"` | Flake module and `homeManagerConfiguration`. |
-| `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | `module-nvf` Home Manager module and editor configuration. |
-| `nix-cachyos-kernel` | Pinned archive at `dbae8dc454556968710401643aa2c6867d166440.tar.gz` | `kernel-cachy` overlay and kernel package set. |
-| `flake-parts` | `github:hercules-ci/flake-parts` | `mkFlake` and `flakeModules.modules`. |
+| `nixpkgs` | `https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz` | Explicit NixOS and Home Manager constructors; system and home packages. |
+| `home-manager` | `https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz`; follows `nixpkgs` | Home Manager flake module and standalone constructors. |
+| `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | Registered editor module and user editor configuration. |
+| `nix-cachyos-kernel` | Pinned archive at `dbae8dc454556968710401643aa2c6867d166440.tar.gz` | Retained `kernel-cachy` registry module; neither current host selects it. |
+| `flake-parts` | `github:hercules-ci/flake-parts` | `mkFlake` and explicit module registries. |
 
-Root `outputs = inputs @ { flake-parts, ... }: flake-parts.lib.mkFlake { inherit inputs; } { ... }` sets `systems = [ "x86_64-linux" ]` and imports, in order, `inputs.flake-parts.flakeModules.modules`, `inputs.home-manager.flakeModules.home-manager`, `./system/modules/flake-module.nix`, `./system/hosts/vm/flake-module.nix`, `./home/modules/flake-module.nix`, `./home/profiles/flake-module.nix`, `./home/users/black/flake-module.nix`, and `./deployments/flake-module.nix`.
+The root imports the flake-parts module-registry extension, Home Manager's
+flake-parts module, then the system modules/accounts/host registries, Home
+Manager feature/profile/policy/user registries, and the deployment constructors.
+All registry imports are explicit and independent of evaluated configuration.
 
-### Registries and consumers
+### Registries and ownership
 
-| Registry entry | Defined by | Imports / defines | Consumed by |
-|---|---|---|---|
-| `config.flake.modules.nixos.system-base`, `system-desktop`, `system-development`, `platform-x86_64-linux`, `kernel-stock`, `kernel-cachy` | `system/modules/flake-module.nix` | Reusable NixOS policy; `kernel-cachy` applies `inputs.nix-cachyos-kernel.overlays.pinned`. | `system/hosts/vm/flake-module.nix`, `deployments/vm/default.nix`. |
-| `config.flake.modules.nixos.host-vm` | `system/hosts/vm/flake-module.nix` | Imports platform, base, desktop, development, and `./hardware.nix`; sets `nixos-dev`, locale, services, VM software rendering, and state version. | Both NixOS deployments. |
-| `config.flake.modules.nixos.user-black-account` | `home/users/black/flake-module.nix` | Creates immutable normal user `black` with fish, groups, and bootstrap hashed password. | Both NixOS deployments. |
-| `config.flake.modules.homeManager.module-*` | `home/modules/flake-module.nix` | Registers each Home Manager module, including `inputs.nvf.homeManagerModules.default`; `module-set` imports all module entries. | `user-black`. |
-| `config.flake.modules.homeManager.profile-base`, `profile-desktop`, `profile-development` | `home/profiles/flake-module.nix` | Profiles define `myHome.*.enable` values. | `user-black`. |
-| `config.flake.modules.homeManager.user-black` | `home/users/black/flake-module.nix` | Imports `module-set` and all profiles; sets identity (`black`, `/home/black`, `26.05`), editor, and Git identity. | All standalone Home Manager deployments. |
-| Deployment definitions | `deployments/standalone/black.nix`, `deployments/vm/default.nix`, `deployments/vm/black/flake-module.nix` | Consume registries and construct output attrs. | Final flake outputs. |
-
-`config.flake.modules` is the reusable registry namespace supplied by flake-parts' `modules` flake module. This is distinct from the conventional `nixosModules`/`homeModules` outputs; in the current evaluation, `modules` has keys `homeManager` and `nixos`, while `nixosModules` and `homeModules` are empty sets.
-
-Dependency direction is one-way: locked `inputs` feed the root `mkFlake` module; root `imports` define registries and per-system values; registry/profile modules define reusable pieces; deployments consume those pieces to instantiate `nixosConfigurations` or standalone `homeConfigurations`; CLI commands select and realize/activate the final outputs. A registry must not depend back on a deployment output, and a NixOS/Home Manager module must not be mistaken for a flake-parts module.
-
-### Output graph
-
-```text
-flake.nix
-  ├─ flake-parts module + Home Manager flake module
-  ├─ system/modules/flake-module.nix
-  │    ├─ modules.nixos.{system-base,system-desktop,system-development,
-  │    │  platform-x86_64-linux,kernel-stock,kernel-cachy}
-  │    └─ perSystem.x86_64-linux.{formatter,devShells.default}
-  ├─ system/hosts/vm/flake-module.nix
-  │    └─ modules.nixos.host-vm -> hardware.nix + system modules
-  ├─ home/modules/flake-module.nix -> modules.homeManager.module-set + module-*
-  ├─ home/profiles/flake-module.nix -> profile-{base,desktop,development}
-  ├─ home/users/black/flake-module.nix
-  │    ├─ modules.homeManager.user-black
-  │    └─ modules.nixos.user-black-account
-  └─ deployments/flake-module.nix
-       ├─ deployments/vm/default.nix
-       │    ├─ nixosConfigurations.nixos-dev      -> kernel-stock
-       │    └─ nixosConfigurations.nixos-dev-cachy -> kernel-cachy
-       ├─ deployments/standalone/black.nix
-       │    └─ homeConfigurations.black
-       └─ deployments/vm/black/flake-module.nix
-            ├─ homeConfigurations."black@vm"
-            └─ homeConfigurations."black@vm-live"
-```
-
-| Final output | Module composition and source semantics |
+| Area | Responsibility |
 |---|---|
-| `nixosConfigurations.nixos-dev` | `inputs.nixpkgs.lib.nixosSystem` with `modules.host-vm`, `modules.user-black-account`, an inline greetd session (`tuigreet --time --cmd start-hyprland`), and `modules.kernel-stock`. |
-| `nixosConfigurations.nixos-dev-cachy` | Same host/account/session, but `modules.kernel-cachy`; this adds the pinned CachyOS overlay and `cachyosKernels."linuxPackages-cachyos-latest-lto-x86_64-v4"`. |
-| `homeConfigurations.black` | `withSystem "x86_64-linux"`; `homeManagerConfiguration { pkgs; modules = [ modules.user-black production ]; }`. Production Lua uses `home/config/hypr/{base.lua,features/keybinds.lua,features/session.lua,themes/default.lua}` plus an optional `home/users/black/config/hypr/override.lua`; Quickshell uses `deployments/standalone/black/config/quickshell/shell.qml`, `.../deployment`, shared `home/config/quickshell`, and user `home/users/black/config/quickshell`. |
-| `homeConfigurations."black@vm"` | Same standalone Home Manager constructor and user module; production Lua adds `deployments/vm/black/config/hypr/host.lua`, uses `vm-black`, and Quickshell sources `deployments/vm/black/config/quickshell/shell.qml` and `components` plus shared/user trees. |
-| `homeConfigurations."black@vm-live"` | Same user module with `live`; all Lua paths are absolute `/etc/nixos/...`, and Quickshell entries use `config.lib.file.mkOutOfStoreSymlink` for `/etc/nixos/deployments/vm/black/config/quickshell/shell.qml`, `components`, shared, and user trees. It intentionally follows edits outside the Nix store. |
+| `system/modules/flake-module.nix` | Registers shared NixOS base, desktop, development, platform and kernel modules; keeps the formatter and development shell. |
+| `system/accounts/` | Registers `account-black`; owns the immutable NixOS login, groups, shell and existing bootstrap password hash. |
+| `system/hosts/vm/` | Registers common VM settings and named desktop/laptop hosts. Both use the unchanged `hardware.nix`, software-rendering settings and NixOS state version `26.05`; only the hostname differs. |
+| `home/modules/` | Registers Home Manager feature modules. Each feature declares typed options and guards its configuration with `mkIf`. |
+| `home/profiles/` | Composes base, desktop and development feature enablement. |
+| `home/users/black/flake-module.nix` | Keeps Home Manager target (`black`, `/home/black`, state version `26.05`) separate from personal preferences (editor, Git identity and profiles); these are not the NixOS OS account. |
+| `home/users/black/sources.nix` | Centralizes shared Hyprland fragments, Quickshell files and the session startup command. |
+| `home/policies/` | Registers role values: floating-toggle chord, Quickshell `SystemClock` precision member, Qt date-time format and bar label, all represented as strings. |
+| `deployments/` | Consumes registry entries to construct the two host-only NixOS outputs and two independent standalone Home Manager outputs. |
 
-The module implementation `home/modules/hyprland.nix` maps each fragment to `dofile(<JSON path>)`, optionally inserts startup callbacks before the final fragment, and writes `.config/hypr/hyprland.lua`. `home/modules/quickshell.nix` maps named entries to `.config/quickshell/${activeConfig}/${name}`; `recursive = false` links/copies the root entry as configured. These are Home Manager option merges, not flake-parts output merges.
+Entries under `flake.modules` are reusable modules, not runnable outputs.
+`deployments/` constructs the actual `nixosConfigurations.*` and
+`homeConfigurations.*` outputs from them. NixOS outputs own the OS account and
+host configuration; standalone Home Manager outputs do not read `osConfig` and
+can be evaluated or built without a NixOS configuration.
 
-### Verified current output names
+### Policy values and outputs
 
-Read-only evaluation of `path:/etc/nixos` currently returns:
+`myHome.hyprland.floatingToggleChord` is a string emitted into exactly one
+floating-toggle binding in `.config/hypr/hyprland.lua`; the shared keybind
+fragment no longer defines a competing `SUPER + V` binding. The desktop and
+laptop policies set `SUPER + SPACE` and `SUPER + V`, respectively, while other
+valid chord strings render directly.
 
-```text
-nixosConfigurations = [ "nixos-dev" "nixos-dev-cachy" ]
-homeConfigurations  = [ "black" "black@vm" "black@vm-live" ]
-modules             = [ "homeManager" "nixos" ]
-modules.nixos       = [ "host-vm" "kernel-cachy" "kernel-stock"
-                        "platform-x86_64-linux" "system-base" "system-desktop"
-                        "system-development" "user-black-account" ]
-modules.homeManager = [ "module-custom-commands" "module-desktop-tools"
-  "module-direnv" "module-fish" "module-fuzzel" "module-gh" "module-git"
-  "module-home-manager" "module-hyprland" "module-lazygit" "module-mako"
-  "module-nvf" "module-nvf-config" "module-quickshell" "module-set"
-  "module-yazi" "module-zoxide" "profile-base" "profile-desktop"
-  "profile-development" "user-black" ]
-```
+`myHome.quickshell.clockPrecision` is a string naming the actual Quickshell
+`SystemClock` precision member, emitted as the QML enum expression. The
+independent `myHome.quickshell.clockFormat` string is emitted as a Qt date-time
+format. The desktop policy uses `SystemClock.Seconds` with
+`yyyy-MM-dd HH:mm:ss`; the laptop uses `SystemClock.Minutes` with
+`yyyy-MM-dd HH:mm`. `home/modules/quickshell.nix` renders these values without
+mapping them through a finite set of role presets, and the shared shell consumes
+the generated `DesktopPolicy.qml`.
 
-`nix flake show --no-update-lock-file --no-write-lock-file path:/etc/nixos` recognizes `devShells.x86_64-linux.default`, `formatter.x86_64-linux`, and the two NixOS configurations; it labels `homeConfigurations`, `homeModules`, and `modules` as `unknown` because they are custom/nonstandard attr types. Use the `nix eval --apply builtins.attrNames` queries above for authoritative names.
+| Output | Composition |
+|---|---|
+| `nixosConfigurations.desktop` | `nixosSystem` with shared VM host, `account-black`, and stock kernel; hostname `nixos-desktop`. |
+| `nixosConfigurations.laptop` | `nixosSystem` with the same host baseline/account/kernel; hostname `nixos-laptop`. |
+| `homeConfigurations."black@desktop"` | `homeManagerConfiguration` with the same Home Manager target, preferences and source catalog plus `policy-desktop` (`SystemClock.Seconds`, `yyyy-MM-dd HH:mm:ss`, `SUPER + SPACE`). |
+| `homeConfigurations."black@laptop"` | Same standalone profile and source catalog plus `policy-laptop` (`SystemClock.Minutes`, `yyyy-MM-dd HH:mm`, `SUPER + V`). |
 
-### Source paths and scope boundaries
+Both host outputs preserve the existing VM hardware and system packages. The
+pinned inputs, `flake.lock`, and Home Manager package/profile settings are not
+refreshed. The CachyOS kernel module/input remains available but is not selected
+by either desktop/laptop host.
 
-- `/etc/nixos/system/modules/` contains reusable NixOS policy and the per-system formatter/dev shell.
-- `/etc/nixos/system/hosts/vm/` contains host registry and hardware facts (`hardware.nix`).
-- `/etc/nixos/home/modules/` contains reusable Home Manager modules; `/etc/nixos/home/profiles/` contains profile definitions.
-- `/etc/nixos/home/users/black/` contains identity and user-owned sources.
-- `/etc/nixos/deployments/` is the composition boundary: it binds host/account/source layout to outputs.
-- `/etc/nixos/home/config/` is shared QML/Hyprland/Mako/Fuzzel source; `/etc/nixos/deployments/vm/black/config/` is VM-specific source.
+### Source boundaries
 
-NixOS is host-only in this graph: `nixosConfigurations.*` does not embed a Home Manager activation. Home Manager uses `inputs.home-manager.lib.homeManagerConfiguration` as standalone outputs and therefore has its own generation and activation command. There is no atomic combined activation; running both switches is two sequential side effects.
+- `system/hosts/vm/hardware.nix`: persistent root/EFI filesystems, systemd-boot,
+  virtio modules, QEMU guest service and existing VM variant sizing.
+- `home/config/hypr/` and `home/config/quickshell/`: shared compositor and shell
+  source; `home/config/hypr/host-vm.lua` retains the VM monitor/gap settings.
+- `home/users/black/config/quickshell/`: user-owned QML settings.
+- `deployments/`: output composition only; it does not own duplicate host or
+  user configuration sources.
+
+The outputs are separate: building never activates, NixOS does not embed a
+Home Manager activation, and a graphical session is required to visually check
+the running bar or compositor.
 
 ## 5. Further reference
 
