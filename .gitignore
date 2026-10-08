@@ -5,4 +5,5 @@ direnv
 *.qcow2
 *.raw
 *.img
-secrets/
+secrets
+flake.lock
