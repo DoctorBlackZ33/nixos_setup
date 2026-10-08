@@ -2,19 +2,18 @@
 #let ... in is just normal nix syntax, it declares locally scoped variables
 let
   # config is what comes out after evaluation assigned values to all the options
-  cfg = config.system.desktop;
+  cfg = config.sysMod.desktop;
 in
 {
   # options are exposed first and tell what is configurable about a module
-  options.system.desktop = {
+  options.sysMod.desktop = {
     enable = lib.mkEnableOption "enable desktop configuration";
-
-    hyprland = {
-      enable = lib.mkEnableOption "enable hyprland";
-    };
-
-    niri = {
-      enable = lib.mkEnableOption "enable niri";
+    
+    compositor = lib.mkOption {
+      type = lib.types.nullOr (lib.types.enum [ "hyprland" "niri" ]);
+      default = null;
+      example = "hyprland";
+      descriptions = "The Wayland compositor to use. Must be chosen if desktop is enabled";
     };
   };
   /* 
@@ -31,18 +30,21 @@ in
   build the config set
   */
   config = lib.mkIf cfg.enable {
-    programs.hyprland = lib.mkIf cfg.hyprland.enable {
+    # catches when window manager is null and the sysMod.desktop is still enabled.
+    assertions = [
+      {
+        assertion = cfg.compositor != null;
+        messaage = "sysMod.desktop is enabled but no windowManager has been specified";
+      }
+    ];
+    
+    programs.hyprland = lib.mkIf(cfg.compositor == "hyprland") {
       enable = true;
       xwayland.enable = true;
     };
 
-    programs.niri = lib.mkIf cfg.niri.enable {
+    programs.niri = lib.mkIf (cfg.compositor == "niri") {
       enable = true;
-    };
-
-    services.displayManager.sddm = lib.mkIf (cfg.hyprland.enable || cfg.niri.enable) {
-      enable = true;
-      wayland.enable = true;
     };
 
     # xdg.portal is gemnini slop, programs.hyprland already enables xdg-desktop-portal-hyprland
@@ -51,14 +53,29 @@ in
       extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
       config = {
         common.default = [ "gtk" ];
+      }
+      /* 
+      // concatinates sets, works kina like union for sets but has right hand precedent
+      so key present in both gets overwritten by the right key
+      lib.optionalAttrs takes a condition (...) and a attrSet {...} and returns the attrSet if the condition is true
+      and returns the empty set {} if the condition is false
+      */
+      // (lib.optionalAttrs (cfg.compositor == "hyprland") {
         hyprland = {
           default = [ "gtk" ];
           # gemini says the gtk portal does not support screen capture on hyprland, this is why these functions use overrides, needs dependency checks
           "org.freedesktop.impl.portal.ScreenCast" = [ "hyprland" ];
           "org.freedesktop.impl.portal.Screenshot" = [ "hyprland" ];
         };
-      };
+      }) 
+      // (lib.optionalAttrs (cfg.compositor == "niri") {
+        niri = {
+          # gemini put this here, needs research, why does niri need gnome xdg desktop portal?
+          default = [ "gnome" "gtk" ];
+        };
+      });
     };
+
     # gemini says without security.rtkit.enable = true; audio could break down under high system pressure due to user scheduling
     security.rtkit.enable = true;
     services.pipewire = {

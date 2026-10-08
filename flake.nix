@@ -38,7 +38,8 @@
     #mkFlake returns an attribute set which contains things like nixosConfiguration as long as its declared somewhere in the imports.
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
+        ./system/modules/flake-module.nix
+        ./system/hosts/prototyping-vm/flake-module.nix
       ];
     };
-  
 }
