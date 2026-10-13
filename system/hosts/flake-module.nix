@@ -1,6 +1,15 @@
-{ ... }:
+{ config, ... }:
+let
+  modules = config.flake.modules.nixos;
+in 
 {
   flake.modules.nixos = {
-    hostMod-vm = ./vm/profile-vm.nix;
+    hostMod-devVM = {
+      import = [
+        ./vm/shared-imports.nix
+        ./vm/variables.nix
+        ./vm/hardware.nix
+      ];
+    };
   };
 }

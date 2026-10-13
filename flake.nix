@@ -39,8 +39,8 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./system/modules/flake-module.nix
-        ./system/hosts/prototyping-vm/flake-module.nix
         ./system/hosts/flake-module.nix
+        ./system/accounts/flake-module.nix
       ];
     };
 }
