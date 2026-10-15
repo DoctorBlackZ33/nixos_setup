@@ -13,7 +13,7 @@ in
       type = lib.types.nullOr (lib.types.enum [ "hyprland" "niri" ]);
       default = null;
       example = "hyprland";
-      descriptions = "The Wayland compositor to use. Must be chosen if desktop is enabled";
+      description = "The Wayland compositor to use. Must be chosen if desktop is enabled";
     };
   };
   /* 
