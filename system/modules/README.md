@@ -21,4 +21,4 @@ Adds options for time zone and locale if there ever needs to be additional imple
 ## Plan
 - [ ] Add support for the [river](https://codeberg.org/river/river) compositors
 - [ ] Replace the basic firewall with a more advanced firewall
-
+- [ ] Switch desktop.nix and tty.nix to the new local variable dependency check compared to enum specification as an option

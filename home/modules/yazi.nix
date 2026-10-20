@@ -1,16 +1,17 @@
 { config, lib, ... }:
 let
   cfg = config.homeMod.yazi;
+  fish = config.homeMod.fish;
 in
 {
   options.homeMod.yazi = {
     enable = lib.mkEnableOption "enable yazi home module";
     
     shellIntegration = lib.mkOption {
-      type = lib.types.nullOr (lib.types.enum [ "fish" ]);
-      default = null;
-      example = "fish";
-      description = "Choose with which shell yazi should interact, enables things like navigation via yazi";
+      type = lib.types.bool;
+      default = true;
+      example = "true";
+      description = "Enables shell integration";
     };
     
     shellKey = lib.mkOption {
@@ -29,11 +30,11 @@ in
   config = lib.mkIf cfg.enable {
     programs.yazi = {
       enable = true;
-    } // (lib.optionalAttrs (cfg.shellIntegration == "fish") {
+    } // (lib.optionalAttrs fish.enable {
       enableFishIntegration = true;
     });
     
-    programs.fish = lib.mkIf (cfg.shellIntegration == "fish") {
+    programs.fish = lib.mkIf fish.enable {
       binds.${cfg.shellKey} = {
         command = cfg.shellCommand;
       };
