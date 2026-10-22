@@ -34,7 +34,7 @@ in
     assertions = [
       {
         assertion = cfg.compositor != null;
-        messaage = "sysMod.desktop is enabled but no windowManager has been specified";
+        message = "sysMod.desktop is enabled but no windowManager has been specified";
       }
     ];
     
