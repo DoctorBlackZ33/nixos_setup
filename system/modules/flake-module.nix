@@ -5,6 +5,8 @@
     system-base = ./base.nix;
     system-desktop = ./desktop.nix;
     system-development = ./development.nix;
+    system-k3s = ./k3s.nix;
+    system-tailscale = ./tailscale.nix;
     platform-x86_64-linux = ./platforms/x86_64-linux.nix;
     kernel-stock = { pkgs, ... }: {
       boot.kernelPackages = pkgs.linuxPackages;

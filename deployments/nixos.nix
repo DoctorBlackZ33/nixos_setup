@@ -9,6 +9,8 @@ in {
         modules.host-desktop
         modules.account-black
         modules.kernel-stock
+        modules.system-k3s
+        modules.system-tailscale
       ];
     };
 
