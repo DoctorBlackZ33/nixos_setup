@@ -18,22 +18,13 @@ in {
     preferences-black = {
       imports = [
         modules.module-set
-        modules.profile-base
-        modules.profile-development
+        modules.profile-cli
         modules.profile-desktop
       ];
-
-      myHome.nvf.enable = true;
-
-      home.sessionVariables = {
-        EDITOR = "nvim";
-        VISUAL = "nvim";
-      };
 
       programs.git.settings = {
         user.name = "DoctorBlack Z 33";
         user.email = "72605982+DoctorBlackZ33@users.noreply.github.com";
-        init.defaultBranch = "main";
       };
     };
 

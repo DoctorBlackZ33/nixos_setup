@@ -12,8 +12,6 @@
 
   config = lib.mkIf config.myHome.desktopTools.enable {
     home.packages = with pkgs; [
-      bashInteractive
-      btop
       grim
       kitty
       wl-clipboard

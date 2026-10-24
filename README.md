@@ -1,9 +1,10 @@
 # Modular NixOS and Home Manager configuration
 
-This flake exposes two alternate NixOS configurations for the same simulated
-VM hardware, plus independent standalone Home Manager configurations for
-`black`. Desktop/laptop differences come from role policies. Home Manager
-outputs are independent and do not read `osConfig`.
+This flake exposes alternate desktop/laptop NixOS configurations for the same
+simulated VM hardware, independent standalone Home Manager configurations for
+`black`, and two CLI-only Proxmox guests with integrated Home Manager for
+`admin`. Desktop/laptop differences come from role policies; their standalone
+Home Manager outputs remain independent and do not read `osConfig`.
 
 ## Architecture boundaries
 
@@ -14,30 +15,38 @@ outputs are independent and do not read `osConfig`.
   tunnel UDP port; tailnet authorization remains an external prerequisite.
 - `system/hosts/vm/` owns the shared VM hardware, host settings, login session,
   and distinct desktop/laptop host names.
+- `system/hosts/proxmox/` owns the CLI-only SeaBIOS guest baseline and the
+  separate generated hardware definitions for `k3-vm-1` and `k3-vm-2`.
 - `system/accounts/` owns the NixOS OS login account; it does not define Home
   Manager identity or personal preferences.
 - `home/modules/` defines typed Home Manager feature options and their guarded
   `mkIf` implementations.
-- `home/profiles/` composes reusable base, desktop, and development features.
+- `home/profiles/` composes reusable base, CLI, desktop, and development
+  features. `profile-cli` shares the editor, shell/tool preferences, and
+  terminal packages between black and admin without desktop enablement.
 - `home/users/black/` defines the separate Home Manager target (`black`,
   `/home/black`, state version `26.05`), shared personal preferences, and a
   centralized source layout.
+- `home/users/admin/` defines `home-admin` (`admin`, `/home/admin`, state
+  version `26.05`). `system-home-admin` integrates it into guest NixOS
+  activation; no separate admin Home Manager switch is needed.
 - `home/policies/` selects the role's clock precision, Qt format string,
   bar label, and floating-toggle chord. The label, format, and chord are
   strings; precision is a string naming the Quickshell `SystemClock` member
   emitted into QML.
 - Root `flake.nix` imports explicit flake-module registries. Their
   `flake.modules` entries are reusable building blocks, not runnable hosts.
-- `deployments/` consumes those registry entries to construct the runnable
-  NixOS and standalone Home Manager outputs.
+- `deployments/` consumes those registry entries to construct runnable
+  NixOS outputs and the two standalone black Home Manager outputs.
 
 The desktop uses `SystemClock.Seconds`, a seconds-format clock, and
 `SUPER + SPACE` to toggle floating windows. The laptop uses
 `SystemClock.Minutes`, a minutes-format clock, and `SUPER + V`. The old shared
 `SUPER + V` floating binding is removed and generated once from the role
-policy. Both alternate hosts retain the existing VM hardware, software-rendering
-settings, services, packages, and NixOS state version. The pinned inputs and
-`flake.lock` are unchanged.
+policy. Both alternate graphical hosts retain the existing VM hardware,
+software-rendering settings, services, packages, and NixOS state version.
+Declared input URLs are retained; the tracked `flake.lock` pins the inputs
+used for both recovery installations.
 
 ## Outputs
 
@@ -46,13 +55,18 @@ settings, services, packages, and NixOS state version. The pinned inputs and
   and Tailscale client daemon.
 - `nixosConfigurations.laptop` (`nixos-rebuild` selector `laptop`): simulated
   laptop host named `nixos-laptop`, stock kernel.
+- `nixosConfigurations.k3-vm-1`: Proxmox VM102, hostname `k3-vm-1`,
+  stock kernel, CLI-only admin home, QEMU guest agent, and Tailscale daemon.
+- `nixosConfigurations.k3-vm-2`: Proxmox VM103, hostname `k3-vm-2`,
+  with the same lean services and its own generated root UUID.
 - `homeConfigurations."black@desktop"`: standalone desktop Home Manager
   generation.
 - `homeConfigurations."black@laptop"`: standalone laptop Home Manager
   generation.
 
-NixOS outputs are host-only; each Home Manager output can be evaluated and
-built independently. They are separate generations and activation commands.
+Desktop/laptop NixOS and standalone black Home Manager outputs are separate
+generations and activation commands. The Proxmox outputs instead embed the
+admin Home Manager activation in NixOS.
 
 ## Evaluate and inspect
 
@@ -94,9 +108,9 @@ nix eval --raw --no-update-lock-file --no-write-lock-file \
 
 ## Build without activation
 
-Build both exact NixOS toplevels and both independent Home Manager activation
-packages. These commands do not activate either generation or update the lock
-file:
+Build the desktop/laptop NixOS toplevels and both independent black Home
+Manager activation packages. These commands do not activate a generation
+or update the lock file:
 
 ```sh
 nix build --no-link --no-update-lock-file --no-write-lock-file \
@@ -109,7 +123,7 @@ nix build --no-link --no-update-lock-file --no-write-lock-file \
   'path:/home/black/nixos#homeConfigurations."black@laptop".activationPackage'
 ```
 
-## Use (activation is intentionally separate)
+## Use desktop/laptop (activation is intentionally separate)
 
 Only activate the matching profile on its intended host. NixOS activation
 requires `sudo`; Home Manager runs as `black` without `sudo`:
@@ -125,13 +139,129 @@ Use `laptop` / `black@laptop` on the laptop host. NixOS and Home Manager
 switches are independent and non-atomic. Building the outputs does not activate
 either profile or prove that a graphical session can render.
 
+## CLI-only Proxmox guests
+
+### Account and home composition
+
+`account-admin` in `system/accounts/admin.nix` is reusable independently of
+the desktop account. It creates `/home/admin`, uses Fish as the login shell,
+and grants only the `wheel` and `networkmanager` supplementary groups.
+The guests keep `users.mutableUsers = true` and use a salted
+`initialHashedPassword`, not a declaratively reset password. Log in with the
+agreed bootstrap password and rotate it:
+
+```sh
+passwd
+```
+
+That change persists across subsequent rebuilds. Do not import
+`account-black` into these guests: its immutable-user password policy is
+deliberately different. Passwords are required for wheel sudo. Native
+OpenSSH permits admin password login, disables keyboard-interactive
+authentication, and denies root SSH; the root password is locked.
+
+`module-set-cli` imports only terminal feature modules. `profile-cli` reuses
+the existing base/development preferences and supplies nvf/Neovim,
+`EDITOR=nvim`, `VISUAL=nvim`, Bash, and btop. Admin gets the same Fish, Git,
+GitHub CLI, lazygit, direnv/nix-direnv, zoxide, and Yazi configuration as
+black, without copying black's Git identity or desktop source paths.
+The shared `system-development` module supplies the same compiler/build
+and Nix tooling as the graphical hosts; its package list is authoritative.
+Black continues to use this CLI profile plus its existing desktop profile.
+
+`system-home-admin` uses the native Home Manager NixOS module with
+`useGlobalPkgs = true` and `useUserPackages = true`. Installation and NixOS
+rebuilds activate `/home/admin` through `home-manager-admin.service`; there
+is no `homeConfigurations."admin@..."` output to switch manually.
+No Hyprland, Quickshell, desktop profile, display manager, or k3s service is
+enabled on either guest. The `k3-` hostnames do not imply a configured
+Kubernetes cluster.
+
+For later changes, rebuild only the matching guest from its `/etc/nixos`
+checkout:
+
+```sh
+sudo nixos-rebuild switch --flake 'path:/etc/nixos#k3-vm-1' \
+  --no-update-lock-file --no-write-lock-file
+```
+
+Use `k3-vm-2` on VM103. Keep `flake.lock` and all new module/hardware files
+in the checkout; Git-backed flake references omit untracked files.
+
+### Disk layout and recovery provenance
+
+Both guests use Proxmox SeaBIOS, `virtio-scsi-single`, and a 64 GiB `scsi0`.
+They have GPT with a 1 MiB BIOS-grub partition (`sda1`) and an ext4 root
+using the remainder (`sda2`), without swap or an EFI system partition.
+GRUB targets the observed whole-disk path
+`/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0`. Each generated
+hardware module imports the QEMU guest profile, explicitly sets
+`x86_64-linux`, and mounts its own root by UUID:
+
+| Proxmox VM | Flake output / hostname | Root UUID |
+|---|---|---|
+| 102 | `k3-vm-1` | `d02e4b1e-0a20-41b1-90b3-708367ee2e93` |
+| 103 | `k3-vm-2` | `e860c58f-c882-4c97-b224-99b49e1c1fa2` |
+
+Before partitioning, guest and hypervisor inspections confirmed both disks
+were blank, without partitions or filesystem signatures. Original live-ISO
+`/etc/nixos` contents were archived before reboot. The hypervisor ZFS
+snapshots were preserved as:
+
+- `rpool/data/vm-102-disk-0@pre-nixos-recovery-20261024`
+- `rpool/data/vm-103-disk-0@before-nixos-recovery-20261024`
+
+The recovery records and original RAM-source archives were collected under
+the operator's `/tmp/nixos-proxmox-recovery/vm102/` and `vm103/`, outside this
+repository. These snapshots preserve the original blank disks, not a backup
+of the subsequently installed systems. Future hardware regeneration must
+retain the correct per-guest UUID; do not copy one guest's hardware file to
+the other.
+
+### Console-to-tailnet access
+
+Both guests boot NetworkManager, `sshd`, `qemu-guest-agent`, and `tailscaled`.
+At each guest's console, log in as admin and authorize its own Tailscale
+identity:
+
+```sh
+sudo tailscale up
+tailscale ip -4
+```
+
+Complete the printed browser authorization as the account owner, and obtain
+any required device approval. Then connect from an authorized tailnet peer
+using `ssh admin@TAIL_IP`, substituting the address printed above, and the
+admin password. This is native OpenSSH over Tailscale, not Tailscale SSH.
+No auth key or automatic tailnet enrollment is configured. Check tailnet
+grants/ACLs before enrollment, and retain console access while changing
+authentication.
+
+### Observed recovery verification (2026-10-24)
+
+- Both installations booted from their real disks after ISO detachment and
+  disk-only Proxmox boot selection; each running root was `/dev/sda2` ext4
+  with the UUID listed above.
+- Console admin password login was exercised on both guests. The coordinator
+  independently verified password-only admin SSH and password-authenticated
+  sudo at DHCP addresses `192.168.1.139` (VM102) and `192.168.1.140` (VM103).
+  These are observed LAN leases, not static-address declarations.
+- Both admin Home Manager services reported active/success. Fish, Git,
+  Neovim, GCC, Clang, Make, jq, Tailscale, btop, lazygit, Yazi, zoxide, and
+  direnv were available; `tailscaled` and the QEMU guest agent were active.
+- Both actual system closures contained zero Hyprland/Quickshell matches;
+  admin had no generated Hyprland/Quickshell files or display manager.
+- Tailscale deliberately remained `NeedsLogin` with no tailnet addresses.
+  Enrollment and end-to-end tailnet SSH remain for the account owner; no
+  k3s service or cluster joining was configured.
+
 ## Kubernetes (desktop only)
 
 `system/modules/k3s.nix` is registered as `flake.modules.nixos.system-k3s`.
-Only `deployments/nixos.nix`'s desktop module list imports it; the laptop,
-shared VM host, accounts, and standalone Home Manager outputs are unchanged.
-Reuse this component by importing the registry entry in another deployment,
-not by adding Kubernetes to a Home Manager profile.
+Only the desktop module list in `deployments/nixos.nix` imports it; neither
+the laptop nor either CLI-only Proxmox guest enables k3s. Reuse this component
+by importing the registry entry in another deployment, not by adding
+Kubernetes to a Home Manager profile.
 
 The component enables native `services.k3s` as a server with its built-in
 agent, containerd, Flannel VXLAN, CoreDNS, metrics-server, and local-path
@@ -257,12 +387,12 @@ References: [pinned NixOS k3s module](https://github.com/NixOS/nixpkgs/blob/21ea
 [cluster access](https://docs.k3s.io/cluster-access), and
 [SQLite backup/restore](https://docs.k3s.io/datastore/backup-restore).
 
-## Tailscale (desktop only)
+## Tailscale (desktop and Proxmox guests)
 
 `system/modules/tailscale.nix` is registered as
-`flake.modules.nixos.system-tailscale` and imported only by the desktop in
-`deployments/nixos.nix`. Other deployments can opt in through that registry
-entry. Laptop, Home Manager, accounts, and the k3s component are unchanged.
+`flake.modules.nixos.system-tailscale` and imported by the desktop and both
+Proxmox guests in `deployments/nixos.nix`. Other deployments can opt in
+through that registry entry; the laptop does not enable it.
 
 The component sets native `services.tailscale.enable = true` and
 `services.tailscale.openFirewall = true`. The pinned module installs the
@@ -277,9 +407,11 @@ NixOS rebuild.
 
 ### Activate and authorize
 
-Sync the checkout to `/etc/nixos` on the desktop, then build and activate as
-shown in the Kubernetes deployment section. A switch deploys both components;
-do not switch Home Manager or the laptop to deploy Tailscale. After activation:
+On the desktop, sync the checkout to `/etc/nixos`, then build and activate as
+shown in the Kubernetes deployment section. That desktop switch deploys both
+components; do not switch Home Manager or the laptop to deploy Tailscale.
+The Proxmox guests already install this component without k3s; follow their
+console-to-tailnet procedure above. After activation:
 
 ```sh
 sudo systemctl status tailscaled
@@ -330,10 +462,10 @@ does not add `tailscale0` to `networking.firewall.trustedInterfaces`. However,
 native Tailscale netfilter mode remains `on`: `tailscaled` installs rules that
 accept tailnet traffic ahead of the NixOS INPUT chain. Not trusting the
 interface in NixOS therefore does **not** block authenticated tailnet peers
-from listening host services, including the k3s API and kubelet.
+from listening host services, including the desktop's k3s API and kubelet.
 
-Before authorizing this node, review the tailnet's access policy. Tailnet
-grants/ACLs must restrict who can reach the desktop and its ports; do not assume
+Before authorizing a node, review the tailnet's access policy. Tailnet
+grants/ACLs must restrict who can reach it and its ports; do not assume
 the physical-interface firewall test also protects the tailnet. This component
 does not install a tailnet policy, change native netfilter behavior, advertise
 cluster routes, or grant Kubernetes credentials. Tailnet reachability does
@@ -344,7 +476,7 @@ References: [pinned native NixOS module](https://github.com/NixOS/nixpkgs/blob/2
 [firewall connectivity](https://tailscale.com/docs/reference/faq/firewall-ports),
 and [native netfilter behavior](https://tailscale.com/docs/reference/netfilter-modes).
 
-## VM display and startup lifecycle
+## Desktop/laptop VM display and startup lifecycle
 
 The VM's persistent display hardware belongs to its libvirt domain, not this
 NixOS/Home Manager flake. The `virtualisation.vmVariant` settings in

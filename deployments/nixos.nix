@@ -21,5 +21,25 @@ in {
         modules.kernel-stock
       ];
     };
+
+    k3-vm-1 = inputs.nixpkgs.lib.nixosSystem {
+      modules = [
+        modules.host-k3-vm-1
+        modules.account-admin
+        modules.kernel-stock
+        modules.system-home-admin
+        modules.system-tailscale
+      ];
+    };
+
+    k3-vm-2 = inputs.nixpkgs.lib.nixosSystem {
+      modules = [
+        modules.host-k3-vm-2
+        modules.account-admin
+        modules.kernel-stock
+        modules.system-home-admin
+        modules.system-tailscale
+      ];
+    };
   };
 }

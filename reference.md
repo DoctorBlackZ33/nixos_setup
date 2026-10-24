@@ -144,8 +144,8 @@ Enter the repository's per-system development shell (the `devShells.x86_64-linux
 nix develop --no-update-lock-file --no-write-lock-file path:/home/black/nixos
 ```
 
-Activate the matching host and Home Manager generation separately. They have
-independent activation and are not an atomic combined operation:
+For desktop/laptop, activate the matching host and black Home Manager
+generation separately. They have independent activation and are not atomic:
 
 ```sh
 sudo nixos-rebuild switch --flake 'path:/home/black/nixos#desktop' \
@@ -159,6 +159,12 @@ but Home Manager activation fails, the system generation remains active while
 the home stays at its previous generation. Run `home-manager` as `black`
 without `sudo`.
 
+The Proxmox outputs are different: `system-home-admin` embeds Home Manager
+in NixOS. On VM102, `sudo nixos-rebuild switch --flake
+'path:/etc/nixos#k3-vm-1' --no-update-lock-file --no-write-lock-file`
+also activates admin's home through `home-manager-admin.service`; use
+`k3-vm-2` on VM103. There is no standalone admin home output.
+
 ## 3. flake-parts semantics
 
 ### Module scopes and arguments
@@ -170,8 +176,8 @@ without `sudo`.
 | Top-level flake-parts module | `config`, `options`, `lib`, `inputs`, `self`, `getSystem`, `moduleWithSystem`, `withSystem`; `system`/`pkgs` are not generally available here. | Global flake-parts options, including `config.flake`, `config.perSystem`, `config.systems`, and registries. | All `flake-module.nix` files define registries or outputs here. |
 | `perSystem = { system, pkgs, ... }: { ... }` | `system`, `pkgs`, `self'`, `inputs'`, plus module `config`/`lib`; only explicitly named function parameters are passed. | The current system's per-system option namespace. | `system/modules/flake-module.nix` defines `formatter` and `devShells.default`. |
 | `withSystem "x86_64-linux" ({ pkgs, system, ... }: expr)` | Per-system context selected explicitly; `pkgs` is the pinned nixpkgs package set for that system. | The selected per-system context while constructing `expr`. | Deployments construct two standalone Home Manager configurations. |
-| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | `host-vm-common`, `host-desktop`, `host-laptop`, `system-*`, `kernel-*`, and `account-black`. |
-| Home Manager module | `config`, `options`, `lib`, `pkgs`, and Home Manager special args. | Home Manager option tree (`home`, `programs`, `myHome`, etc.). | `home-black`, `preferences-black`, profiles, policies and `home/modules/*`. |
+| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | VM/Proxmox host entries, `system-*`, `kernel-*`, `account-black`, and `account-admin`. |
+| Home Manager module | `config`, `options`, `lib`, `pkgs`, and Home Manager special args. | Home Manager option tree (`home`, `programs`, `myHome`, etc.). | `home-black`, `home-admin`, `preferences-black`, profiles, policies and `home/modules/*`. |
 
 `inputs` is the root input set; `self` is the recursively defined final flake output set. In a per-system scope, `inputs'`/`self'` are system-scoped projections. `withSystem` is the supported bridge from a top-level output definition to `pkgs` and other per-system values; do not assume top-level `pkgs` or `system`.
 
@@ -199,15 +205,15 @@ Common flake-parts failure modes: using `pkgs`/`system` at top level instead of 
 
 ### Root and input graph
 
-`/home/black/nixos/flake.nix` declares these locked inputs; their URLs and lock
-entries are retained:
+The root `flake.nix` declares these inputs. The tracked `flake.lock` pins
+their resolved revisions for reproducible recovery installs:
 
 | Input | URL / relation | Consumers |
 |---|---|---|
 | `nixpkgs` | `https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz` | Explicit NixOS and Home Manager constructors; system and home packages. |
-| `home-manager` | `https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz`; follows `nixpkgs` | Home Manager flake module and standalone constructors. |
+| `home-manager` | `https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz`; follows `nixpkgs` | Home Manager flake module, standalone black constructors, and integrated admin NixOS module. |
 | `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | Registered editor module and user editor configuration. |
-| `nix-cachyos-kernel` | Pinned archive at `dbae8dc454556968710401643aa2c6867d166440.tar.gz` | Retained `kernel-cachy` registry module; neither current host selects it. |
+| `nix-cachyos-kernel` | Pinned archive at `dbae8dc454556968710401643aa2c6867d166440.tar.gz` | Retained `kernel-cachy` registry module; none of the current hosts selects it. |
 | `flake-parts` | `github:hercules-ci/flake-parts` | `mkFlake` and explicit module registries. |
 
 The root imports the flake-parts module-registry extension, Home Manager's
@@ -219,21 +225,24 @@ All registry imports are explicit and independent of evaluated configuration.
 
 | Area | Responsibility |
 |---|---|
-| `system/modules/flake-module.nix` | Registers shared NixOS base, desktop, development, platform and kernel modules; keeps the formatter and development shell. |
-| `system/accounts/` | Registers `account-black`; owns the immutable NixOS login, groups, shell and existing bootstrap password hash. |
+| `system/modules/flake-module.nix` | Registers shared NixOS base, desktop, development, k3s, Tailscale, platform and kernel modules; `system-home-admin` bridges integrated Home Manager to `home-admin`; keeps the formatter and development shell. |
+| `system/accounts/` | Registers unchanged immutable `account-black` and reusable `account-admin`; owns OS logins, groups, shells and password hashes, not Home Manager identities. Admin uses a salted initial hash with mutable users on the guests. |
 | `system/hosts/vm/` | Registers common VM settings and named desktop/laptop hosts. Both use the unchanged `hardware.nix`, software-rendering settings and NixOS state version `26.05`; only the hostname differs. |
-| `home/modules/` | Registers Home Manager feature modules. Each feature declares typed options and guards its configuration with `mkIf`. |
-| `home/profiles/` | Composes base, desktop and development feature enablement. |
+| `system/hosts/proxmox/` | Registers CLI-only `host-proxmox-common` and `host-k3-vm-1`/`host-k3-vm-2`; owns SeaBIOS GRUB, NetworkManager, QEMU agent, native password SSH, locked root, and per-guest generated hardware. |
+| `home/modules/` | Registers typed, guarded Home Manager features. `module-set-cli` imports terminal-only modules; full `module-set` adds desktop modules for black. `desktop-tools.nix` contains only graphical packages. |
+| `home/profiles/` | Composes base, CLI, desktop and development feature enablement. `profile-cli` reuses base/development, enables nvf and editor variables, and supplies Bash/btop to both users. |
 | `home/users/black/flake-module.nix` | Keeps Home Manager target (`black`, `/home/black`, state version `26.05`) separate from personal preferences (editor, Git identity and profiles); these are not the NixOS OS account. |
 | `home/users/black/sources.nix` | Centralizes shared Hyprland fragments, Quickshell files and the session startup command. |
+| `home/users/admin/flake-module.nix` | Defines `home-admin` (`admin`, `/home/admin`, state version `26.05`) using only `module-set-cli` and `profile-cli`, with no desktop policy/source files or black Git identity. |
 | `home/policies/` | Registers role values: floating-toggle chord, Quickshell `SystemClock` precision member, Qt date-time format and bar label, all represented as strings. |
-| `deployments/` | Consumes registry entries to construct the two host-only NixOS outputs and two independent standalone Home Manager outputs. |
+| `deployments/` | Consumes registry entries to construct four NixOS outputs and two independent standalone black Home Manager outputs. The Proxmox outputs include integrated admin Home Manager, Tailscale, and the stock kernel, but not k3s. |
 
 Entries under `flake.modules` are reusable modules, not runnable outputs.
 `deployments/` constructs the actual `nixosConfigurations.*` and
 `homeConfigurations.*` outputs from them. NixOS outputs own the OS account and
-host configuration; standalone Home Manager outputs do not read `osConfig` and
-can be evaluated or built without a NixOS configuration.
+host configuration; Proxmox outputs also integrate admin Home Manager.
+Standalone black Home Manager outputs do not read `osConfig` and can be
+evaluated or built without a NixOS configuration.
 
 ### Policy values and outputs
 
@@ -254,29 +263,71 @@ the generated `DesktopPolicy.qml`.
 
 | Output | Composition |
 |---|---|
-| `nixosConfigurations.desktop` | `nixosSystem` with shared VM host, `account-black`, and stock kernel; hostname `nixos-desktop`. |
+| `nixosConfigurations.desktop` | `nixosSystem` with shared graphical VM host, `account-black`, stock kernel, `system-k3s`, and `system-tailscale`; hostname `nixos-desktop`. |
 | `nixosConfigurations.laptop` | `nixosSystem` with the same host baseline/account/kernel; hostname `nixos-laptop`. |
+| `nixosConfigurations.k3-vm-1` | VM102: `host-k3-vm-1`, `account-admin`, stock kernel, `system-home-admin`, and `system-tailscale`; generated ext4 root UUID `d02e4b1e-0a20-41b1-90b3-708367ee2e93`. |
+| `nixosConfigurations.k3-vm-2` | VM103: `host-k3-vm-2`, same account/kernel/services, and its own generated ext4 root UUID `e860c58f-c882-4c97-b224-99b49e1c1fa2`. |
 | `homeConfigurations."black@desktop"` | `homeManagerConfiguration` with the same Home Manager target, preferences and source catalog plus `policy-desktop` (`SystemClock.Seconds`, `yyyy-MM-dd HH:mm:ss`, `SUPER + SPACE`). |
 | `homeConfigurations."black@laptop"` | Same standalone profile and source catalog plus `policy-laptop` (`SystemClock.Minutes`, `yyyy-MM-dd HH:mm`, `SUPER + V`). |
 
-Both host outputs preserve the existing VM hardware and system packages. The
-pinned inputs, `flake.lock`, and Home Manager package/profile settings are not
-refreshed. The CachyOS kernel module/input remains available but is not selected
-by either desktop/laptop host.
+Desktop/laptop retain their existing graphical VM hardware, packages and
+standalone black outputs. All four hosts use the stock kernel; the CachyOS
+kernel module/input remains available but unselected. The input declarations
+are retained and the tracked lock is shared by both recovery installations.
 
 ### Source boundaries
 
 - `system/hosts/vm/hardware.nix`: persistent root/EFI filesystems, systemd-boot,
   virtio modules, QEMU guest service and existing VM variant sizing.
+- `system/hosts/proxmox/k3-vm-{1,2}/hardware.nix`: actual generated per-guest
+  ext4 root UUID, QEMU profile and initrd modules, explicit `x86_64-linux`.
+  Both disks have GPT `sda1` (1 MiB BIOS-grub) and `sda2` (remaining ext4
+  root), no swap/ESP; GRUB's whole-disk target is
+  `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0`.
 - `home/config/hypr/` and `home/config/quickshell/`: shared compositor and shell
   source; `home/config/hypr/host-vm.lua` retains the VM monitor/gap settings.
 - `home/users/black/config/quickshell/`: user-owned QML settings.
 - `deployments/`: output composition only; it does not own duplicate host or
   user configuration sources.
 
-The outputs are separate: building never activates, NixOS does not embed a
-Home Manager activation, and a graphical session is required to visually check
-the running bar or compositor.
+Building never activates. Desktop/laptop do not embed black Home Manager
+activation, and their compositor/bar checks require a graphical session.
+The Proxmox outputs instead autoactivate admin Home Manager at install/boot
+and on NixOS rebuild, without a graphical session.
+
+### Proxmox bootstrap and observed recovery
+
+`account-admin` sets Fish, wheel/networkmanager membership, and only a salted
+`initialHashedPassword`. The guests explicitly keep mutable users so admin's
+`passwd` changes survive rebuilds. Wheel sudo requires the admin password;
+native OpenSSH password authentication is enabled, keyboard-interactive
+authentication is disabled, root SSH is denied, and root's password is
+locked. Never copy the immutable `account-black` policy to these hosts.
+
+At the console, admin runs `sudo tailscale up`, completes the account-owner
+authorization, and obtains the address with `tailscale ip -4`. Authorized
+peers then use native `ssh admin@TAIL_IP` with the admin password. No auth
+key, Tailscale SSH, automatic enrollment, or cluster join is configured;
+the `k3-` names do not enable a k3s service. Rotate the bootstrap password
+with `passwd` before relying on the system.
+
+Recovery on 2026-10-24 confirmed both original 64 GiB disks were blank before
+GPT/BIOS-grub/ext4 preparation. Original RAM `/etc/nixos` sources were
+archived outside the repo. Hypervisor snapshots preserve that original state:
+`rpool/data/vm-102-disk-0@pre-nixos-recovery-20261024` and
+`rpool/data/vm-103-disk-0@before-nixos-recovery-20261024`.
+They are not installed-system backups.
+
+Both guests subsequently booted their actual ext4 roots with the ISO
+detached and Proxmox disk-only boot selected. Console password login and
+independent password-only admin SSH/sudo were exercised; integrated Home
+Manager succeeded, CLI/editor/compiler tools were present, and Tailscale
+and the QEMU agent were active. Both actual closures had zero
+Hyprland/Quickshell matches. Tailscale intentionally remained `NeedsLogin`,
+without tailnet addresses, so tailnet SSH is not yet verified.
+See [the README guest operations and evidence](README.md#cli-only-proxmox-guests)
+for the per-guest UUIDs, observed DHCP addresses, tool smoke checks, and
+console authorization procedure.
 
 ## 5. Further reference
 

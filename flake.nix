@@ -27,10 +27,12 @@
         ./system/modules/flake-module.nix
         ./system/accounts/flake-module.nix
         ./system/hosts/vm/flake-module.nix
+        ./system/hosts/proxmox/flake-module.nix
         ./home/modules/flake-module.nix
         ./home/profiles/flake-module.nix
         ./home/policies/flake-module.nix
         ./home/users/black/flake-module.nix
+        ./home/users/admin/flake-module.nix
         ./deployments/flake-module.nix
       ];
     };

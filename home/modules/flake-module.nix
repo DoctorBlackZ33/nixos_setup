@@ -21,24 +21,30 @@ in {
     module-yazi = ./yazi.nix;
     module-zoxide = ./zoxide.nix;
 
-    module-set = {
+    module-set-cli = {
       imports = [
         modules.module-custom-commands
-        modules.module-desktop-tools
         modules.module-direnv
         modules.module-fish
-        modules.module-fuzzel
         modules.module-gh
         modules.module-git
         modules.module-home-manager
-        modules.module-hyprland
         modules.module-lazygit
-        modules.module-mako
         modules.module-nvf
         modules.module-nvf-config
-        modules.module-quickshell
         modules.module-yazi
         modules.module-zoxide
+      ];
+    };
+
+    module-set = {
+      imports = [
+        modules.module-set-cli
+        modules.module-desktop-tools
+        modules.module-fuzzel
+        modules.module-hyprland
+        modules.module-mako
+        modules.module-quickshell
       ];
     };
   };
