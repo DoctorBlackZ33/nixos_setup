@@ -13,6 +13,10 @@
   inputs = {
     #i could pin a specific revision via a tarball, this would make it faster but would mean i need to manually update this link on each update
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    hjem = {
+      url = "github:feel-co/hjem";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       #this means that home-manager.inputs.nixpkgs follows the inputs.nixpkgs to avoid duplication and lock drift
