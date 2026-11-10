@@ -1,7 +1,7 @@
 { ... }:
 {
-  myHome.hyprland.floatingToggleChord = "SUPER + SPACE";
-  myHome.quickshell.clockPrecision = "SystemClock.Seconds";
-  myHome.quickshell.clockFormat = "yyyy-MM-dd HH:mm:ss";
-  myHome.quickshell.label = "desktop";
+  desktopPolicy.hyprland.floatingToggleChord = "SUPER + SPACE";
+  desktopPolicy.quickshell.clockPrecision = "SystemClock.Seconds";
+  desktopPolicy.quickshell.clockFormat = "yyyy-MM-dd HH:mm:ss";
+  desktopPolicy.quickshell.label = "desktop";
 }

@@ -13,7 +13,7 @@
 | `42`, `-3`, `true`, `false`, `null` | Integer, unary-negated integer, booleans, null. | `enabled = true;` |
 | `"text ${expr}"` | Double-quoted string; `${...}` interpolation is evaluated and coerced to a string. `\n`, `\t`, `\"`, `\\` are escapes. | `"system = ${system}"` |
 | `''text ${expr}''` | Indented (multi-line) string; common indentation is stripped; interpolation works. Escape interpolation as `''${...}`. | `text = ''\n  line\n'';` |
-| `/absolute/file`, `./relative/file`, `../parent/file` | Path literal; relative paths resolve relative to the file containing the expression and are copied/content-addressed when used as a flake input. | `./home/modules/git.nix` |
+| `/absolute/file`, `./relative/file`, `../parent/file` | Path literal; relative paths resolve relative to the file containing the expression and are copied/content-addressed when used as a flake input. | `./home/programmod/programs/git.nix` |
 | `https://...`, `git+https://...`, `github:owner/repo` | URI-like literals are accepted in contexts that expect a URI; quote them in attr values for unambiguous strings. Flake refs use the URI grammar in §3. | `nixpkgs.url = "...";` |
 | `<name/path>` | Angle-bracket path searched through `NIX_PATH`; impure and unavailable in pure flake evaluation unless supplied. | `import <nixpkgs> {}` |
 | `[ e1 e2 ]` | List; elements are separated by whitespace, not commas. Elements are lazy. | `[ pkgs.git pkgs.jq ]` |
@@ -66,9 +66,9 @@ Use parentheses around mixed arithmetic, list concatenation, updates, and condit
 | Laziness | Nix uses call-by-need: a binding/list element/attribute is evaluated only when demanded, then shared. A set can be constructed without evaluating every value; `builtins.deepSeq` forces a whole value before returning another. |
 | `import path` | Reads and evaluates a Nix file; the result may be any Nix value, commonly a function (`import ./module.nix args`) or set. Relative paths resolve relative to the importing file. `import <nixpkgs>` depends on `NIX_PATH`; flake code should use the locked `inputs.nixpkgs` instead. |
 | Derivation | A derivation is a lazy recipe/value (usually from `pkgs.stdenv.mkDerivation`); evaluation creates a `.drv` plan, while realization (`nix build`, a system switch, or a dependency demand) executes it and produces store paths. A derivation is an attr set with `type = "derivation"`. |
-| Evaluation vs build | Evaluation computes the expression/output graph and may fetch/evaluate source inputs; realization builds derivations; activation performs system/home side effects. `nix eval` does not build; `nix build` does not activate. |
+| Evaluation vs build | Evaluation computes the expression/output graph and may fetch/evaluate source inputs; realization builds derivations; activation performs system/home side effects. `nix eval` usually does not realize derivations, but import-from-derivation (used by this repository's TOML settings) can build a generator during evaluation; `nix build` does not activate. |
 | Purity | Flake evaluation is locked and normally pure: undeclared filesystem/network/environment dependencies are rejected or ignored. `--impure` permits ambient values such as `NIX_PATH` and environment variables. `builtins.pathExists` can inspect declared/local paths; a path source can be copied into the store, while `mkOutOfStoreSymlink` intentionally keeps a live filesystem path. |
-| String vs path | A path literal carries source-location semantics and is eligible for store copying; a string containing `/home/black/nixos/...` is only text. Convert deliberately with `toString`/`builtins.toPath` where supported. |
+| String vs path | A path literal carries source-location semantics and is eligible for store copying; a string containing `/home/black/experimental/...` is only text. Convert deliberately with `toString`/`builtins.toPath` where supported. |
 | Module file vs module value | `./x.nix` is a path value; `imports = [ ./x.nix ]` asks the module system to import it. A module value can instead be `{ config, lib, ... }: { ... }`. |
 
 ## 2. Flakes and command-line lookup
@@ -77,14 +77,14 @@ Use parentheses around mixed arithmetic, list concatenation, updates, and condit
 
 | Form | Interpretation |
 |---|---|
-| `path:/home/black/nixos` | Explicit local flake URI; avoids ambiguity with a bare path. |
-| `path:/home/black/nixos#nixosConfigurations.desktop` | URI plus `#` attribute selector; selectors traverse attributes with dots. Quote selectors containing `@`, spaces, or shell metacharacters. |
+| `path:/home/black/experimental` | Explicit local flake URI; avoids ambiguity with a bare path. |
+| `path:/home/black/experimental#nixosConfigurations.desktop` | URI plus `#` attribute selector; selectors traverse attributes with dots. Quote selectors containing `@`, spaces, or shell metacharacters. |
 | `github:owner/repo` / `github:owner/repo/ref` | GitHub shorthand; `ref` can be branch, tag, or revision. |
 | `git+https://host/repo?ref=main&rev=...` | Explicit Git transport and query parameters; `rev` pins content, `ref` names the requested ref. |
 | `./.` / `path:.` | Local flake path; lock metadata records a content hash/mtime and dirty-tree status as applicable. |
-| `#attr` | Output selector shorthand when the flake URI is supplied separately (for example `nix build .#packages.x86_64-linux.default`). In shell, quote `path:/home/black/nixos#homeConfigurations."black@desktop".activationPackage`. |
+| `#attr` | Output selector shorthand when the flake URI is supplied separately. In shell, quote `path:/home/black/experimental#programmodConfigurations."black@desktop".build.configDir`. |
 
-Standard output conventions: `packages.<system>.<name>` (buildable packages), `apps.<system>.<name>` (runnable apps), `devShells.<system>.<name>`, `checks.<system>.<name>`, `formatter.<system>`, and `templates`. This repository additionally exposes `nixosConfigurations`, `homeConfigurations`, and flake-parts registries under `modules`; those are valid custom attrs but are not all classified by `nix flake show` as standard buildable outputs.
+Standard output conventions: `packages.<system>.<name>` (buildable packages), `apps.<system>.<name>` (runnable apps), `devShells.<system>.<name>`, `checks.<system>.<name>`, `formatter.<system>`, and `templates`. This repository additionally exposes `nixosConfigurations`, `programmodConfigurations`, and flake-parts registries under `modules`; these are valid custom attrs, while the configDir and package-environment entries are standard buildable packages.
 
 ### Evaluation, realization, activation
 
@@ -92,7 +92,7 @@ Standard output conventions: `packages.<system>.<name>` (buildable packages), `a
 |---|---|---|
 | Evaluation | Parse/evaluate `flake.nix`, locked inputs, modules, and selected output; errors are type/option/assert/import failures. | `nix flake show`, `nix flake metadata`, `nix eval`, `nix flake check --no-build` |
 | Realization | Build selected derivation and dependencies into `/nix/store`; no system/home switch. | `nixos-rebuild build`; `nix build` |
-| Activation | Run generated activation logic and change the running system or user home. | `sudo nixos-rebuild switch`; `home-manager switch` |
+| Activation | Run generated activation logic and change the running system or user home. | `sudo nixos-rebuild switch --flake 'path:/home/black/experimental#desktop'` (use `#laptop` for the other host; applies its Hjem-managed user configuration). |
 
 ### Commands and flags used in this repository
 
@@ -100,78 +100,114 @@ Standard output conventions: `packages.<system>.<name>` (buildable packages), `a
 |---|---|
 | `nix flake show URI` | Summarizes recognized outputs; custom attrs may appear as `unknown`. |
 | `nix flake metadata URI` | Shows locked URI, fingerprint, and input revisions without switching. |
-| `nix flake check --no-build URI --print-build-logs` | Evaluates checks and module/output consistency; `--no-build` avoids realization. |
+| `nix flake check --no-build URI --print-build-logs` | Evaluates checks and module/output consistency without building check outputs; evaluating TOML-backed settings can still require import-from-derivation (IFD). |
 | `nix eval URI#attr --apply builtins.attrNames` | Evaluates an attr set and prints its keys; use `--json` for machine-readable output. |
 | `nix build --no-link URI#attr` | Realizes a derivation without making `./result`; omit `--no-link` to create a result symlink. |
 | `--no-update-lock-file` | Refuses lock-file updates. |
 | `--no-write-lock-file` | Does not write a generated lock file; use with read-only inspection/builds. |
-| `--flake URI` | `nixos-rebuild`/`home-manager` selector for a flake and output. |
+| `--flake URI` | Select a flake and NixOS output with `nixos-rebuild`. |
 | `--print-build-logs` | Streams build logs when builds are allowed. |
-| `--no-build` | Evaluation/check mode; does not realize derivations. |
+| `--no-build` | Avoids building requested outputs/checks; evaluation may still need IFD to build a generator. |
 | `--no-link` | Build without creating a result symlink. |
 
 Copy-paste read-only output queries:
 
 ```sh
-nix flake show --no-update-lock-file --no-write-lock-file path:/home/black/nixos
-nix flake metadata --no-update-lock-file --no-write-lock-file path:/home/black/nixos
+nix flake show --no-update-lock-file --no-write-lock-file path:/home/black/experimental
+nix flake metadata --no-update-lock-file --no-write-lock-file path:/home/black/experimental
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/home/black/nixos#nixosConfigurations --apply builtins.attrNames
+  path:/home/black/experimental#nixosConfigurations --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/home/black/nixos#homeConfigurations --apply builtins.attrNames
+  path:/home/black/experimental#programmodConfigurations --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/home/black/nixos#modules.homeManager --apply builtins.attrNames
+  path:/home/black/experimental#modules.programmod --apply builtins.attrNames
 nix eval --json --no-update-lock-file --no-write-lock-file \
-  path:/home/black/nixos#modules.nixos --apply builtins.attrNames
+  path:/home/black/experimental#modules.nixos --apply builtins.attrNames
 ```
 
-Build without activation or lock writes:
+Build NixOS hosts or standalone programmod outputs without activation or lock writes:
 
 ```sh
-nixos-rebuild build --flake 'path:/home/black/nixos#desktop' \
+nixos-rebuild build --flake 'path:/home/black/experimental#desktop' \
   --no-update-lock-file --no-write-lock-file
-nixos-rebuild build --flake 'path:/home/black/nixos#laptop' \
+nixos-rebuild build --flake 'path:/home/black/experimental#laptop' \
   --no-update-lock-file --no-write-lock-file
 nix build --no-link --no-update-lock-file --no-write-lock-file \
-  'path:/home/black/nixos#homeConfigurations."black@desktop".activationPackage'
+  'path:/home/black/experimental#packages.x86_64-linux.programmod-configDir-black-desktop'
 nix build --no-link --no-update-lock-file --no-write-lock-file \
-  'path:/home/black/nixos#homeConfigurations."black@laptop".activationPackage'
+  'path:/home/black/experimental#packages.x86_64-linux.programmod-configDir-black-laptop'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/experimental#packages.x86_64-linux.programmod-packages-black-desktop'
+nix build --no-link --no-update-lock-file --no-write-lock-file \
+  'path:/home/black/experimental#packages.x86_64-linux.programmod-packages-black-laptop'
 ```
 
 Enter the repository's per-system development shell (the `devShells.x86_64-linux.default` output):
 
 ```sh
-nix develop --no-update-lock-file --no-write-lock-file path:/home/black/nixos
+nix develop --no-update-lock-file --no-write-lock-file \
+  path:/home/black/experimental
 ```
 
-Activate the matching host and Home Manager generation separately. They have
-independent activation and are not an atomic combined operation:
+The NixOS configuration is the activation boundary: Hjem manages the user's
+files, packages, and session variables as part of that host. The standalone
+`programmodConfigurations` are configuration data, configDir trees, and
+package environments; they have no activation package. This migration did not
+run a system switch or any home activation.
+
+Before the first switch, inspect the existing Home Manager generation and
+`~/.config` links. Hjem has `clobberByDefault = false`, so old Home
+Manager-managed links can block Hjem's first file activation. Retire only
+obsolete Home Manager-owned links/generation as appropriate for the previous
+deployment; use Home Manager's uninstall workflow only if the old setup was a
+standalone Home Manager deployment. Preserve unrelated user files; do not set
+`clobberFiles = true` as a blanket workaround.
+
+After reviewing the existing files, the operator can activate either host:
 
 ```sh
-sudo nixos-rebuild switch --flake 'path:/home/black/nixos#desktop' \
-  --no-update-lock-file --no-write-lock-file
-home-manager switch --flake 'path:/home/black/nixos#black@desktop' \
-  --no-write-lock-file
+sudo nixos-rebuild switch --flake 'path:/home/black/experimental#desktop'
+sudo nixos-rebuild switch --flake 'path:/home/black/experimental#laptop'
 ```
 
-Use `laptop` and `black@laptop` on the laptop host. If NixOS activation succeeds
-but Home Manager activation fails, the system generation remains active while
-the home stays at its previous generation. Run `home-manager` as `black`
-without `sudo`.
+These are documented operator commands; neither was run by the assistant.
+
+The standalone configs' `build.loadEnv` and the Hjem adapter's
+`environment.sessionVariables` expose the configured environment to their
+respective consumers. The Fish program module also emits the shared
+`programmod-environment` section with Fish-native `set -gx` lines after the
+`settings` section for both standalone and Hjem delivery.
+
+### Programmod self-check
+
+Resolve the flake-locked nixpkgs and Hjem source paths, then evaluate the
+spec-compatible `nix-instantiate` entrypoint:
+
+```sh
+NIXPKGS_SOURCE="$(nix eval --raw --impure --no-update-lock-file --no-write-lock-file \
+  --expr '(builtins.getFlake "/home/black/experimental").inputs.nixpkgs.outPath')"
+HJEM_SOURCE="$(nix eval --raw --impure --no-update-lock-file --no-write-lock-file \
+  --expr '(builtins.getFlake "/home/black/experimental").inputs.hjem.outPath')"
+nix-instantiate --eval --strict home/programmod/test.nix \
+  --arg nixpkgs "$NIXPKGS_SOURCE" --arg hjem "$HJEM_SOURCE"
+```
+
+It returns `{ ok = true; }` only after its framework, standalone, and actual
+NixOS+Hjem adapter assertions succeed.
 
 ## 3. flake-parts semantics
 
 ### Module scopes and arguments
 
-`flake-parts.lib.mkFlake { inherit inputs; } module` runs a Nix module system whose final `config.flake` becomes flake outputs. `config` and `options` are the flake-parts module-system state, not NixOS or Home Manager state.
+`flake-parts.lib.mkFlake { inherit inputs; } module` runs a Nix module system whose final `config.flake` becomes flake outputs. `config` and `options` are the flake-parts module-system state, not NixOS, Hjem, or programmod state.
 
 | Scope | Common module arguments | What `config` means | What this repo uses |
 |---|---|---|---|
 | Top-level flake-parts module | `config`, `options`, `lib`, `inputs`, `self`, `getSystem`, `moduleWithSystem`, `withSystem`; `system`/`pkgs` are not generally available here. | Global flake-parts options, including `config.flake`, `config.perSystem`, `config.systems`, and registries. | All `flake-module.nix` files define registries or outputs here. |
 | `perSystem = { system, pkgs, ... }: { ... }` | `system`, `pkgs`, `self'`, `inputs'`, plus module `config`/`lib`; only explicitly named function parameters are passed. | The current system's per-system option namespace. | `system/modules/flake-module.nix` defines `formatter` and `devShells.default`. |
-| `withSystem "x86_64-linux" ({ pkgs, system, ... }: expr)` | Per-system context selected explicitly; `pkgs` is the pinned nixpkgs package set for that system. | The selected per-system context while constructing `expr`. | Deployments construct two standalone Home Manager configurations. |
-| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | `host-vm-common`, `host-desktop`, `host-laptop`, `system-*`, `kernel-*`, and `account-black`. |
-| Home Manager module | `config`, `options`, `lib`, `pkgs`, and Home Manager special args. | Home Manager option tree (`home`, `programs`, `myHome`, etc.). | `home-black`, `preferences-black`, profiles, policies and `home/modules/*`. |
+| `withSystem "x86_64-linux" ({ pkgs, system, ... }: expr)` | Per-system context selected explicitly; `pkgs` is the pinned nixpkgs package set for that system. | The selected per-system context while constructing `expr`. | Deployments construct the standalone programmod configurations. |
+| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree (`services`, `boot`, `users`, etc.). | `host-vm-common`, `host-desktop`, `host-laptop`, `system-*`, `kernel-*`, `account-black`, Hjem, and the programmod adapter. |
+| Hjem user module | `config`, `options`, `lib`, `pkgs`, and declared special args. | Hjem user options and the nested programmod `homeMod`. | The user path/directory, Hjem adapter, and Hjem-delivered programmod configuration. |
 
 `inputs` is the root input set; `self` is the recursively defined final flake output set. In a per-system scope, `inputs'`/`self'` are system-scoped projections. `withSystem` is the supported bridge from a top-level output definition to `pkgs` and other per-system values; do not assume top-level `pkgs` or `system`.
 
@@ -186,34 +222,35 @@ without `sudo`.
 | `lib.mkMerge [ { ... } { ... } ]` | Emits multiple definitions from one module for normal option merging. |
 | `imports = [ module-or-path ... ];` | Recursively imports modules before option/config merging. Imports add definitions; they do not call a module like an ordinary function. |
 | `systems = [ "x86_64-linux" ... ];` | Declares systems for which flake-parts evaluates `perSystem`. This repository has exactly `x86_64-linux`; it does not claim other platforms. |
-| `flake.foo = value;` | Defines a top-level flake output attr. Nested attrs such as `flake.nixosConfigurations` and `flake.homeConfigurations` become outputs verbatim. |
+| `flake.foo = value;` | Defines a top-level flake output attr. Nested attrs such as `flake.nixosConfigurations` and `flake.programmodConfigurations` become outputs verbatim. |
 | `perSystem = { ... }: { formatter = ...; devShells.default = ...; };` | Defines system-specific options; flake-parts transposes supported per-system outputs to `formatter.<system>` and `devShells.<system>`. |
-| Transposition boundary | Only options declared by flake-parts as per-system options are transposed. A top-level `flake.homeConfigurations` set is not automatically converted to a per-system attr. |
+| Transposition boundary | Only options declared by flake-parts as per-system options are transposed. Top-level `flake.programmodConfigurations` is not automatically converted to a per-system attr; buildable configDir/package environments are explicitly exposed under `packages.<system>`. |
 | `flake.modules.<namespace>.<name> = module;` | With `inputs.flake-parts.flakeModules.modules` imported, registers reusable modules under a named namespace. Registries are ordinary flake attrs and are consumed by later modules through `config.flake.modules`. |
 
 A list option normally concatenates definitions; an attr-set option recursively merges keys; scalar options conflict unless priorities select one. Module merging is distinct from Nix `//`: `//` is a shallow expression-level update, while the module system applies option types, priorities, conditionals, and declarations.
 
-Common flake-parts failure modes: using `pkgs`/`system` at top level instead of `withSystem`/`perSystem`; omitting a module from root `imports`; importing a NixOS module into a Home Manager module (or vice versa); defining `config` as if it were a plain set rather than option definitions; relying on `//` for a deep module merge; using an unlisted system; creating a cycle where a registry module imports the output that consumes it; and using an unquoted `#`/`@` selector in the shell. A missing option declaration, wrong option type, duplicate scalar definition, or missing attr selection fails during evaluation rather than at activation.
+Common flake-parts failure modes: using `pkgs`/`system` at top level instead of `withSystem`/`perSystem`; omitting a module from root `imports`; importing a NixOS module into Hjem or programmod (or vice versa); defining `config` as if it were a plain set rather than option definitions; relying on `//` for a deep module merge; using an unlisted system; creating a cycle where a registry module imports the output that consumes it; and using an unquoted `#`/`@` selector in the shell. A missing option declaration, wrong option type, duplicate scalar definition, or missing attr selection fails during evaluation rather than at activation.
 
 ## 4. This repository: graph and data flow
 
 ### Root and input graph
 
-`/home/black/nixos/flake.nix` declares these locked inputs; their URLs and lock
-entries are retained:
+`/home/black/experimental/flake.nix` declares these locked inputs:
 
 | Input | URL / relation | Consumers |
 |---|---|---|
-| `nixpkgs` | `https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz` | Explicit NixOS and Home Manager constructors; system and home packages. |
-| `home-manager` | `https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz`; follows `nixpkgs` | Home Manager flake module and standalone constructors. |
-| `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | Registered editor module and user editor configuration. |
+| `nixpkgs` | `https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz` | NixOS systems, Hjem, standalone programmod packages. |
+| `hjem` | `github:feel-co/hjem`; follows `nixpkgs` | Hjem NixOS module and per-user configuration. |
+| `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | Independent `lib.nvim.neovimConfiguration` used by the `nvf` program module. |
 | `nix-cachyos-kernel` | Pinned archive at `dbae8dc454556968710401643aa2c6867d166440.tar.gz` | Retained `kernel-cachy` registry module; neither current host selects it. |
 | `flake-parts` | `github:hercules-ci/flake-parts` | `mkFlake` and explicit module registries. |
 
-The root imports the flake-parts module-registry extension, Home Manager's
-flake-parts module, then the system modules/accounts/host registries, Home
-Manager feature/profile/policy/user registries, and the deployment constructors.
-All registry imports are explicit and independent of evaluated configuration.
+After changing flake inputs, run `nix flake lock` from
+`/home/black/experimental` to update the lock. The root imports the
+flake-parts module-registry extension, system registries, the programmod
+adapter registry, home profile/policy/user registries, and deployment
+constructors. Hjem and the programmod NixOS adapter are imported by both
+NixOS host outputs.
 
 ### Registries and ownership
 
@@ -221,62 +258,86 @@ All registry imports are explicit and independent of evaluated configuration.
 |---|---|
 | `system/modules/flake-module.nix` | Registers shared NixOS base, desktop, development, platform and kernel modules; keeps the formatter and development shell. |
 | `system/accounts/` | Registers `account-black`; owns the immutable NixOS login, groups, shell and existing bootstrap password hash. |
-| `system/hosts/vm/` | Registers common VM settings and named desktop/laptop hosts. Both use the unchanged `hardware.nix`, software-rendering settings and NixOS state version `26.05`; only the hostname differs. |
-| `home/modules/` | Registers Home Manager feature modules. Each feature declares typed options and guards its configuration with `mkIf`. |
-| `home/profiles/` | Composes base, desktop and development feature enablement. |
-| `home/users/black/flake-module.nix` | Keeps Home Manager target (`black`, `/home/black`, state version `26.05`) separate from personal preferences (editor, Git identity and profiles); these are not the NixOS OS account. |
-| `home/users/black/sources.nix` | Centralizes shared Hyprland fragments, Quickshell files and the session startup command. |
-| `home/policies/` | Registers role values: floating-toggle chord, Quickshell `SystemClock` precision member, Qt date-time format and bar label, all represented as strings. |
-| `deployments/` | Consumes registry entries to construct the two host-only NixOS outputs and two independent standalone Home Manager outputs. |
+| `system/hosts/vm/` | Registers common VM settings and named desktop/laptop hosts. Both use unchanged `hardware.nix`, software-rendering settings and NixOS state version `26.05`; only the hostname differs. |
+| `home/programmod/` | Contains the class-`programmod` evaluator/core, Hjem and NixOS adapters, and auto-discovered program modules. Programs generate only programmod files, packages, and environment. |
+| `home/profiles/` | Composes base, desktop and development features; package-only utilities are plain packages. |
+| `home/users/black/flake-module.nix` | Composes the user's profiles, editor/Git preferences, and sources. The Hjem deployment sets `user = "black"` and `directory = "/home/black"`. |
+| `home/users/black/sources.nix` | Centralizes ordered Hyprland fragments, Quickshell file/directory sources and the session startup command. |
+| `home/policies/` | Registers role values under `desktopPolicy`: Hyprland floating-toggle chord and Quickshell clock precision, date-time format, and label. |
+| `deployments/` | Builds the desktop/laptop NixOS+Hjem hosts and matching standalone programmod configs. |
 
 Entries under `flake.modules` are reusable modules, not runnable outputs.
-`deployments/` constructs the actual `nixosConfigurations.*` and
-`homeConfigurations.*` outputs from them. NixOS outputs own the OS account and
-host configuration; standalone Home Manager outputs do not read `osConfig` and
-can be evaluated or built without a NixOS configuration.
+`deployments/` constructs `nixosConfigurations.*` and
+`programmodConfigurations.*`. Each NixOS output imports Hjem and the programmod
+NixOS adapter, then evaluates the same user/profile/source modules and its role
+policy under `hjem.users.black.homeMod`. The standalone output calls
+`programmod.configuration` with those same programmod-class modules and does
+not read `osConfig`.
+
+Each standalone config exposes `files`, `packages`, and `environment`, plus
+`build.files`, `build.configDir`, and `build.loadEnv`. The configDir output is
+a `.config`-shaped package; the package-environment output contains the
+standalone config's package list. Neither is an activation generation.
 
 ### Policy values and outputs
 
-`myHome.hyprland.floatingToggleChord` is a string emitted into exactly one
-floating-toggle binding in `.config/hypr/hyprland.lua`; the shared keybind
-fragment no longer defines a competing `SUPER + V` binding. The desktop and
-laptop policies set `SUPER + SPACE` and `SUPER + V`, respectively, while other
-valid chord strings render directly.
+`desktopPolicy.hyprland.floatingToggleChord` is emitted into exactly one
+floating-toggle binding in `.config/hypr/hyprland.lua`. The desktop and laptop
+policies set `SUPER + SPACE` and `SUPER + V`, respectively.
 
-`myHome.quickshell.clockPrecision` is a string naming the actual Quickshell
-`SystemClock` precision member, emitted as the QML enum expression. The
-independent `myHome.quickshell.clockFormat` string is emitted as a Qt date-time
-format. The desktop policy uses `SystemClock.Seconds` with
-`yyyy-MM-dd HH:mm:ss`; the laptop uses `SystemClock.Minutes` with
-`yyyy-MM-dd HH:mm`. `home/modules/quickshell.nix` renders these values without
-mapping them through a finite set of role presets, and the shared shell consumes
-the generated `DesktopPolicy.qml`.
+`desktopPolicy.quickshell.clockPrecision` names the Quickshell
+`SystemClock` precision member, emitted as a QML enum expression.
+`desktopPolicy.quickshell.clockFormat` is emitted as the Qt date-time format.
+The desktop policy uses `SystemClock.Seconds` with `yyyy-MM-dd HH:mm:ss`; the
+laptop uses `SystemClock.Minutes` with `yyyy-MM-dd HH:mm`. The generated
+`DesktopPolicy.qml` is consumed by the shared shell.
 
 | Output | Composition |
 |---|---|
-| `nixosConfigurations.desktop` | `nixosSystem` with shared VM host, `account-black`, and stock kernel; hostname `nixos-desktop`. |
-| `nixosConfigurations.laptop` | `nixosSystem` with the same host baseline/account/kernel; hostname `nixos-laptop`. |
-| `homeConfigurations."black@desktop"` | `homeManagerConfiguration` with the same Home Manager target, preferences and source catalog plus `policy-desktop` (`SystemClock.Seconds`, `yyyy-MM-dd HH:mm:ss`, `SUPER + SPACE`). |
-| `homeConfigurations."black@laptop"` | Same standalone profile and source catalog plus `policy-laptop` (`SystemClock.Minutes`, `yyyy-MM-dd HH:mm`, `SUPER + V`). |
+| `nixosConfigurations.desktop` | `nixosSystem` with shared VM host, `account-black`, stock kernel, Hjem, and `policy-desktop`; hostname `nixos-desktop`. |
+| `nixosConfigurations.laptop` | Same host baseline/account/kernel and Hjem with `policy-laptop`; hostname `nixos-laptop`. |
+| `programmodConfigurations."black@desktop"` | Standalone programmod configuration with shared user preferences, base/development/desktop profiles and sources plus `policy-desktop` (`SystemClock.Seconds`, `yyyy-MM-dd HH:mm:ss`, `SUPER + SPACE`). |
+| `programmodConfigurations."black@laptop"` | Same standalone profile/source modules plus `policy-laptop` (`SystemClock.Minutes`, `yyyy-MM-dd HH:mm`, `SUPER + V`). |
+| `packages.x86_64-linux.programmod-configDir-black-*` | Buildable `.config` trees from `build.configDir`. |
+| `packages.x86_64-linux.programmod-packages-black-*` | Buildable package environments from each standalone config's `packages`. |
 
-Both host outputs preserve the existing VM hardware and system packages. The
-pinned inputs, `flake.lock`, and Home Manager package/profile settings are not
-refreshed. The CachyOS kernel module/input remains available but is not selected
-by either desktop/laptop host.
+The `nvf` program module calls nvf's independent configuration API; its
+`settings.vim` data is passed to the upstream typed module options and
+`nvf.sections` is rendered into `vim.luaConfigRC`. TOML-backed program
+settings use `pkgs.formats.toml` and `builtins.readFile`, which requires
+import-from-derivation (IFD) and evaluates a small TOML generator.
+
+Both host outputs preserve the existing VM hardware and system packages.
+The Hjem input follows `nixpkgs`; `flake.lock` pins the inputs. Home Manager
+module integration/activation outputs are removed, while the Home Manager CLI
+remains a nixpkgs package in the base profile. The CachyOS kernel module/input
+remains available but is not selected by either host.
 
 ### Source boundaries
 
 - `system/hosts/vm/hardware.nix`: persistent root/EFI filesystems, systemd-boot,
   virtio modules, QEMU guest service and existing VM variant sizing.
 - `home/config/hypr/` and `home/config/quickshell/`: shared compositor and shell
-  source; `home/config/hypr/host-vm.lua` retains the VM monitor/gap settings.
+  source; `home/config/hypr/host-vm.lua` retains VM monitor/gap settings.
 - `home/users/black/config/quickshell/`: user-owned QML settings.
 - `deployments/`: output composition only; it does not own duplicate host or
   user configuration sources.
 
-The outputs are separate: building never activates, NixOS does not embed a
-Home Manager activation, and a graphical session is required to visually check
-the running bar or compositor.
+Programmod files may contain generated text or file/directory sources under
+`~/.config`. Hjem maps them to `xdg.config.files`, forwards program packages to
+the user, and passes environment values to `environment.sessionVariables`.
+The Fish program module renders the same `programmod-environment` section from
+`config.environment` as Fish-native `set -gx` lines after `settings` for both
+Hjem and standalone delivery. Standalone configs also expose a POSIX
+`build.loadEnv` script for other shell bootstrap paths.
+
+TOML settings are rendered with `pkgs.formats.toml` and `builtins.readFile`;
+this uses IFD during evaluation. Nix commands that evaluate those settings
+must permit import-from-derivation.
+
+No switch or activation was performed. Building a NixOS output does not
+activate its Hjem configuration, and building standalone programmod outputs
+does not activate files or packages.
 
 ## 5. Further reference
 

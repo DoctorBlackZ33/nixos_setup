@@ -1,6 +1,6 @@
 { ... }:
 {
-  myHome.hyprland = {
+  hyprland = {
     fragments = [
       ../../../home/config/hypr/base.lua
       ../../../home/config/hypr/features/keybinds.lua
@@ -11,20 +11,12 @@
     startupCommands = [ "quickshell --config black" ];
   };
 
-  myHome.quickshell = {
+  quickshell = {
     activeConfig = "black";
     files = {
-      "shell.qml" = {
-        source = ../../../home/config/quickshell/shell.qml;
-      };
-      shared = {
-        source = ../../../home/config/quickshell;
-        recursive = false;
-      };
-      user = {
-        source = ./config/quickshell;
-        recursive = false;
-      };
+      "shell.qml".source = ../../../home/config/quickshell/shell.qml;
+      shared.source = ../../../home/config/quickshell;
+      user.source = ./config/quickshell;
     };
   };
 }

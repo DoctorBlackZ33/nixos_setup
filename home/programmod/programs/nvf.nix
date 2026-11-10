@@ -1,19 +1,8 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, nvf, pkgs, ... }:
 
 let
-  cfg = config.myHome.nvf;
-in {
-  options.myHome.nvf.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = false;
-    description = "Enable the productive nvf editor configuration.";
-  };
-
-  config = lib.mkIf cfg.enable {
-    programs.nvf = {
-      enable = true;
-      defaultEditor = false;
-      settings.vim = {
+  cfg = config.nvf;
+  defaultVimSettings = {
         extraPackages = [ pkgs.statix ];
         # Keep the leader visible and predictable before lazy plugins load.
         globals = {
@@ -175,10 +164,10 @@ in {
             settings.nixd = {
               # Evaluate against this VM's pinned flake input rather than a
               # mutable channel or a second nixpkgs installation.
-              nixpkgs.expr = "let flake = builtins.getFlake \"/home/black/nixos\"; in import flake.inputs.nixpkgs { }";
+              nixpkgs.expr = "let flake = builtins.getFlake \"/home/black/experimental\"; in import flake.inputs.nixpkgs { }";
               options = {
-                nixos.expr = "(builtins.getFlake \"/home/black/nixos\").nixosConfigurations.desktop.options";
-                home_manager.expr = "(builtins.getFlake \"/home/black/nixos\").homeConfigurations.\"black@desktop\".options";
+                nixos.expr = "(builtins.getFlake \"/home/black/experimental\").nixosConfigurations.desktop.options";
+                hjem.expr = "((builtins.getFlake \"/home/black/experimental\").nixosConfigurations.desktop.options.hjem.users.type.getSubOptions []).homeMod.type.getSubOptions []";
               };
             };
           };
@@ -246,6 +235,25 @@ in {
           }
         ];
       };
-    };
+  vimSettings = lib.recursiveUpdate
+    (lib.recursiveUpdate defaultVimSettings (cfg.settings.vim or { }))
+    (lib.optionalAttrs (cfg.sections != { }) {
+      luaConfigRC.programmod-sections = lib.programmod.renderSections {
+        inherit (cfg) sections;
+        comment = "--";
+      };
+    });
+  editor = nvf.lib.nvim.neovimConfiguration {
+    inherit pkgs;
+    modules = [ { config.vim = vimSettings; } ];
+  };
+in {
+  options.nvf = lib.programmod.mkProgramOptions {
+    name = "nvf";
+    package = editor.neovim;
+  };
+
+  config = lib.mkIf cfg.enable {
+    packages = lib.optional (cfg.package != null) cfg.package;
   };
 }

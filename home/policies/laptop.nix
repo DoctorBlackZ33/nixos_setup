@@ -1,7 +1,7 @@
 { ... }:
 {
-  myHome.hyprland.floatingToggleChord = "SUPER + V";
-  myHome.quickshell.clockPrecision = "SystemClock.Minutes";
-  myHome.quickshell.clockFormat = "yyyy-MM-dd HH:mm";
-  myHome.quickshell.label = "laptop";
+  desktopPolicy.hyprland.floatingToggleChord = "SUPER + V";
+  desktopPolicy.quickshell.clockPrecision = "SystemClock.Minutes";
+  desktopPolicy.quickshell.clockFormat = "yyyy-MM-dd HH:mm";
+  desktopPolicy.quickshell.label = "laptop";
 }

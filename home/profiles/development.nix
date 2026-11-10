@@ -1,5 +1,5 @@
 { ... }:
 
 {
-  myHome.gh.enable = true;
+  gh.enable = true;
 }

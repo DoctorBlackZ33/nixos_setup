@@ -1,36 +1,28 @@
 { config, ... }:
 
 let
-  modules = config.flake.modules.homeManager;
-  homeTarget = {
-    username = "black";
-    homeDirectory = "/home/black";
-    stateVersion = "26.05";
-  };
+  modules = config.flake.modules.programmod;
 in {
-  flake.modules.homeManager = {
-    home-black = {
-      home.username = homeTarget.username;
-      home.homeDirectory = homeTarget.homeDirectory;
-      home.stateVersion = homeTarget.stateVersion;
-    };
-
-    preferences-black = {
+  flake.modules.programmod = {
+    user-black = {
       imports = [
-        modules.module-set
         modules.profile-base
         modules.profile-development
         modules.profile-desktop
+        modules.preferences-black
+        modules.sources-black
       ];
+    };
 
-      myHome.nvf.enable = true;
+    preferences-black = {
+      nvf.enable = true;
 
-      home.sessionVariables = {
+      environment = {
         EDITOR = "nvim";
         VISUAL = "nvim";
       };
 
-      programs.git.settings = {
+      git.settings = {
         user.name = "DoctorBlack Z 33";
         user.email = "72605982+DoctorBlackZ33@users.noreply.github.com";
         init.defaultBranch = "main";

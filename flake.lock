@@ -68,21 +68,24 @@
         "type": "github"
       }
     },
-    "home-manager": {
+    "hjem": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1790215976,
-        "narHash": "sha256-VkR1rMGyjU9jtw8ISFx5uqR9e+LEaOlhHwrseFkiIVk=",
-        "type": "tarball",
-        "url": "https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz"
+        "lastModified": 1794190356,
+        "narHash": "sha256-tttNqwFIXsClznNv3uEltACsfBm8xIDo9bPl+BHqYZc=",
+        "owner": "feel-co",
+        "repo": "hjem",
+        "rev": "28cec3017cc94842f919f8f294c8b7136216b79b",
+        "type": "github"
       },
       "original": {
-        "type": "tarball",
-        "url": "https://github.com/nix-community/home-manager/archive/refs/heads/release-26.05.tar.gz"
+        "owner": "feel-co",
+        "repo": "hjem",
+        "type": "github"
       }
     },
     "mnw": {
@@ -200,7 +203,7 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "home-manager": "home-manager",
+        "hjem": "hjem",
         "nix-cachyos-kernel": "nix-cachyos-kernel",
         "nixpkgs": "nixpkgs_2",
         "nvf": "nvf"

@@ -1,9 +1,16 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
-  myHome.desktopTools.enable = true;
-  myHome.hyprland.enable = true;
-  myHome.quickshell.enable = true;
-  myHome.mako.enable = true;
-  myHome.fuzzel.enable = true;
+  packages = with pkgs; [
+    bashInteractive
+    btop
+    grim
+    kitty
+    wl-clipboard
+  ];
+
+  hyprland.enable = true;
+  quickshell.enable = true;
+  mako.enable = true;
+  fuzzel.enable = true;
 }

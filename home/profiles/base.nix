@@ -1,12 +1,19 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
-  myHome.customCommands.enable = true;
-  myHome.direnv.enable = true;
-  myHome.fish.enable = true;
-  myHome.git.enable = true;
-  myHome.homeManager.enable = true;
-  myHome.lazygit.enable = true;
-  myHome.yazi.enable = true;
-  myHome.zoxide.enable = true;
+  packages = with pkgs; [
+    home-manager
+    lazygit
+  ];
+
+  direnv.enable = true;
+  fish.enable = true;
+  fish.settings.commandColor = "brcyan";
+  fish.settings.aliases = {
+    ll = "ls -lah";
+    la = "ls -A";
+  };
+  git.enable = true;
+  yazi.enable = true;
+  zoxide.enable = true;
 }

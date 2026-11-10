@@ -1,7 +1,6 @@
 { pkgs, ... }:
 
 {
-  programs.hyprland.enable = true;
 
   services.pipewire = {
     enable = true;
