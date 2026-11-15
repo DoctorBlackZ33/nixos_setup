@@ -4,14 +4,17 @@
 { lib, inputs }:
 let
   capabilities = import ./capabilities.nix { inherit lib; };
+  typed = import ./typed.nix { inherit lib; };
 
   self = {
-    inherit capabilities;
-    contract = import ./contract.nix { inherit lib capabilities; };
+    inherit capabilities typed;
+    contract = import ./contract.nix { inherit lib capabilities typed; };
     reconcile = import ./reconcile.nix { inherit lib capabilities; };
     sections = import ./sections.nix { inherit lib; };
     modules = import ./modules.nix { inherit lib; };
-    inventory = import ./inventory.nix { inherit lib; };
+    inventory = import ./inventory.nix { inherit lib typed; };
+    accounts = import ./accounts.nix { inherit lib typed; };
+    mkCheck = import ./check.nix { inherit lib; };
     facts = import ./facts.nix { inherit lib; framework = self; };
     home = import ./home.nix { inherit lib inputs; framework = self; };
   };

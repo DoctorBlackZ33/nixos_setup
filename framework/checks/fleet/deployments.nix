@@ -9,7 +9,7 @@
     ws-2 = { users = [ "alice" ]; };
     ws-3 = { };
     srv-1 = { };
-    srv-2 = { users = [ "bob" ]; };
+    srv-2 = { users = [ "bob" "lena" ]; };
     srv-arm = { users = [ "alice" ]; };
     sec-1 = { users = [ "dave" ]; };
 
@@ -49,9 +49,13 @@
       users = [ "gina" "hugo" ];
     };
 
-    # erin has a user configuration but no account on that host.
+    # erin has a user configuration but no account file.
     no-account = {
       host = "srv-1";
+      users = [ "erin" ];
+    };
+    disabled-no-account = {
+      host = "srv-no-account-off";
       users = [ "erin" ];
     };
 
@@ -70,6 +74,29 @@
       host = "man-secret";
       users = [ "bob" ];
     };
+
+    # Account files that overstep or are misspelled, on a host with a system
+    # and on one without.
+    account-groups = {
+      host = "srv-1";
+      users = [ "judy" ];
+    };
+    account-typo = {
+      host = "srv-1";
+      users = [ "kent" ];
+    };
+    account-typo-manual = {
+      host = "man-srv";
+      users = [ "kent" ];
+    };
+
+    # Known fields with wrong types must be forced on every delivery path.
+    account-uid-nixos = { host = "srv-1"; users = [ "mira" ]; };
+    account-uid-system-manager = { host = "sm-srv"; users = [ "mira" ]; };
+    account-uid-manual = { host = "man-srv"; users = [ "mira" ]; };
+    account-description-nixos = { host = "srv-1"; users = [ "nick" ]; };
+    account-description-system-manager = { host = "sm-srv"; users = [ "nick" ]; };
+    account-description-manual = { host = "man-srv"; users = [ "nick" ]; };
   };
 
   edge = {

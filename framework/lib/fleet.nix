@@ -8,9 +8,20 @@
 #
 # The real config flake and the synthetic fleet in framework/checks both go
 # through this function.
-{ lib, framework, inputs, nixpkgs, root, deployments, secrets ? null, moduleArgs ? { } }:
+{ lib
+, framework
+, inputs
+, root
+, deployments
+, secrets ? null
+, moduleArgs ? { }
+, overlays ? [ ]
+, nixpkgsConfig ? { }
+}:
 let
   inherit (framework.modules) discover;
+  # Every delivery path starts at the framework's one nixpkgs input.
+  inherit (inputs) nixpkgs;
 
   hostsDirectory = root + "/hosts";
   usersDirectory = root + "/users";
@@ -27,6 +38,25 @@ let
   nixosSystemModules = lib.attrValues (discover ../system/nixos);
 
   standalone = import ../adapters/standalone.nix { inherit lib framework; };
+
+  # One package policy on every path: NixOS systems, system-manager systems
+  # and standalone users see the same overlays and the same nixpkgs config.
+  # NixOS takes both as options; for the other two paths see `system` and
+  # `pkgsFor`.
+  packagePolicy = {
+    nixpkgs.overlays = overlays;
+    nixpkgs.config = nixpkgsConfig;
+  };
+
+  pkgsFor = platform:
+    if overlays == [ ] && nixpkgsConfig == { } then
+      nixpkgs.legacyPackages.${platform}
+    else
+      import nixpkgs {
+        system = platform;
+        inherit overlays;
+        config = nixpkgsConfig;
+      };
 
   fail = subject: problems:
     throw (lib.concatStringsSep "\n" ([ "${subject}:" ] ++ map (problem: "  - ${problem}") problems));
@@ -64,6 +94,13 @@ let
 
       homeNames = lib.attrNames entry.homes;
 
+      # Who a user is comes from their own account file, wherever they go.
+      accountFile = user: "users/${user}/account.nix";
+      accountData = lib.genAttrs
+        (lib.filter (user: builtins.pathExists (root + "/${accountFile user}")) entry.users)
+        (user: import (root + "/${accountFile user}"));
+      accounts = lib.mapAttrs (user: framework.accounts.evalUser (accountFile user)) accountData;
+
       problems =
         map
           (user: "users/${user}/default.nix does not exist (known users: ${lib.concatStringsSep ", " knownUsers})")
@@ -83,9 +120,15 @@ let
         ++ lib.optional (managed != "manual" && builtins.pathExists providesPath)
           "hosts/${host}/provides.nix exists, but a ${managed} host computes what it provides"
         ++ lib.optional (managed == "manual" && declaredProvides.secrets != { })
-          "hosts/${host}/provides.nix declares secrets, but only NixOS hosts have a secrets backend";
+          "hosts/${host}/provides.nix declares secrets, but only NixOS hosts have a secrets backend"
+        ++ lib.concatLists (lib.mapAttrsToList
+          (user: framework.accounts.problems user (accountFile user))
+          accountData);
 
-      checked = value: if problems == [ ] then value else fail "deployment '${name}'" problems;
+      # Account files are typed for every deployment that lists the user, so a
+      # mistake in one does not wait for the first NixOS host to show.
+      checked = value:
+        if problems == [ ] then builtins.deepSeq accounts value else fail "deployment '${name}'" problems;
 
       # R7: one override file per user and host, used by every adapter.
       homeModules = user:
@@ -103,13 +146,17 @@ let
           ++ nixosSystemModules
           ++ [
             systemPath
-            { contract.facts = facts; }
+            packagePolicy
+            {
+              contract.facts = facts;
+              sysMod.accounts = lib.mapAttrs (_: framework.accounts.asHostDefinitions) accountData;
+            }
           ]
           # R1: which modules exist follows from the inventory and from flake
           # settings, never from this evaluation's config.
           ++ lib.optionals (entry.users != [ ]) [
             inputs.hjem.nixosModules.default
-            ../adapters/nixos-users.nix
+            (import ../adapters/nixos-users.nix { deployedUsers = entry.users; })
             {
               hjem.specialArgs = { inherit moduleArgs; };
               hjem.users = lib.genAttrs entry.users (user: { homeMod.imports = homeModules user; });
@@ -125,7 +172,7 @@ let
 
       # --- everything else: users are evaluated on their own --------------
       homeConfigs = lib.genAttrs entry.users (user: framework.home.eval {
-        pkgs = nixpkgs.legacyPackages.${facts.platform};
+        pkgs = pkgs.${facts.platform};
         inherit facts moduleArgs;
         modules = homeModules user;
       });
@@ -136,12 +183,17 @@ let
 
       system = inputs.system-manager.lib.makeSystemConfig {
         specialArgs = systemArgs;
+        # The overlays go in as an argument: system-manager's own
+        # `nixpkgs.overlays` option is `listOf anything`, whose merge wraps
+        # every overlay, so one that reads `prev` recurses forever.
+        inherit overlays;
         modules =
           [ ../adapters/system-manager.nix ]
           ++ commonSystemModules
           ++ [
             systemPath
             {
+              nixpkgs.config = nixpkgsConfig;
               contract.facts = facts;
               contract.userRequests = lib.mapAttrs (_: home: home.requires) homeConfigs;
             }
@@ -154,20 +206,23 @@ let
 
       homes = lib.mapAttrs
         (user: homeMod: standalone.mkConfiguration {
-          pkgs = nixpkgs.legacyPackages.${facts.platform};
+          pkgs = pkgs.${facts.platform};
           inherit facts provides requests user homeMod;
           home = entry.homes.${user} or "/home/${user}";
         })
         homeConfigs;
     in
     {
-      inherit name facts;
+      inherit name facts problems;
       nixos = checked nixos;
       system = checked system;
       homes = checked homes;
     };
 
   targets = lib.mapAttrs mkTarget deployments;
+
+  # One package set per platform, shared by every standalone user on it.
+  pkgs = lib.genAttrs (lib.unique (lib.mapAttrsToList (_: target: target.facts.platform) targets)) pkgsFor;
 
   duplicateHostNames =
     lib.attrNames (lib.filterAttrs (_: names: builtins.length names > 1)
@@ -200,6 +255,10 @@ in
     (name: target:
       lib.mapAttrs' (user: home: lib.nameValuePair "${user}@${name}" home.verdict) target.homes)
     standaloneTargets);
+
+  # Every deployment's mistakes as data, `<name> = [ message ]`: the messages
+  # its outputs throw, for checks.
+  problems = lib.mapAttrs (_: target: target.problems) targets;
 
   # One check per deployable thing, so a failure names its host and CI can
   # build them independently. NixOS checks are the system toplevels.

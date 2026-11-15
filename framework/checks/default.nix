@@ -1,19 +1,14 @@
 # Framework checks. Every condition is decided during evaluation and the
 # derivations are empty markers, so `nix flake check --no-build` is the whole
 # test run and a failure names the condition that broke.
-{ pkgs, system, nixpkgs, inputs }:
+{ pkgs, system, inputs }:
 let
   inherit (pkgs) lib;
 
   framework = import ../lib { inherit lib inputs; };
   inherit (framework) contract reconcile sections;
 
-  mkCheck = name: conditions:
-    let
-      failed = lib.attrNames (lib.filterAttrs (_: holds: !holds) conditions);
-    in
-    assert lib.assertMsg (failed == [ ]) "check '${name}' failed: ${lib.concatStringsSep "; " failed}";
-    pkgs.runCommand "check-${name}" { } "touch $out";
+  mkCheck = framework.mkCheck pkgs;
 
   fails = value: !(builtins.tryEval (builtins.deepSeq value value)).success;
   evaluates = derivation: builtins.isString derivation.drvPath;
@@ -218,12 +213,21 @@ let
   };
 
   buildFleet = { deployments, ... }@args: import ../lib/fleet.nix ({
-    inherit lib framework inputs nixpkgs secrets;
+    inherit lib framework inputs secrets;
     root = ./fleet;
   } // args // {
     deployments = framework.inventory.eval deployments;
   });
   fleetOf = deployments: buildFleet { inherit deployments; };
+
+  # Exercise the config-flake boundary, even when a caller overrides systems.
+  configFlake = settings: modules: inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+    imports = [ (import ../flake-module.nix { frameworkInputs = inputs; }) ] ++ modules;
+    framework = {
+      root = ./fleet;
+      frameworkChecks = false;
+    } // settings;
+  };
 
   fleet = fleetOf inventory.valid;
   rejected = name: fleetOf { ${name} = inventory.invalid.${name}; };
@@ -261,8 +265,132 @@ let
   failing = config: map (assertion: assertion.message) (lib.filter (assertion: !assertion.assertion) config.assertions);
 
   serverWithDesktopUser = (rejected "nixos-server").nixosConfigurations.nixos-server;
+
+  # --- accounts -----------------------------------------------------------
+  nixosHosts = lib.attrNames fleet.nixosConfigurations;
+  deployedOn = host: inventory.valid.${host}.users or [ ];
+  fixtureUsers = lib.attrNames (builtins.readDir ./fleet/users);
+  accountFile = user: import (./fleet/users + "/${user}/account.nix");
+
+  # A user's login account on a host of the valid fleet, `{ }` without one,
+  # so a missing account fails a condition instead of the evaluation.
+  login = host: user: (nixos host).users.users.${user} or { };
+  identity = host: user: {
+    uid = (login host user).uid or null;
+    description = (login host user).description or null;
+    shell = framework.accounts.shellIdentity ((login host user).shell or "none");
+  };
+  keys = host: user: (login host user).openssh.authorizedKeys.keys or [ ];
+  logins = host: lib.attrNames (lib.filterAttrs
+    (user: account: lib.elem user fixtureUsers && account.isNormalUser)
+    (nixos host).users.users);
+
+  # The deployment is refused with a message naming the file and the field.
+  refused = name: file: field: lib.any
+    (message: lib.hasInfix file message && lib.hasInfix "`${field}`" message)
+    ((rejected name).problems.${name} or [ ]);
+
+  # --- package policy -----------------------------------------------------
+  # ivan installs what the package policy makes available: a package only an
+  # overlay defines, and one gated on nixpkgs config. The same three hosts,
+  # one per delivery path, with and without a policy.
+  ivanEverywhere = {
+    srv-1.users = [ "ivan" ];
+    sm-srv.users = [ "ivan" ];
+    man-srv.users = [ "ivan" ];
+  };
+  withPolicy = buildFleet {
+    overlays = [ (final: prev: { fleetMarker = prev.hello; }) ];
+    nixpkgsConfig.allowUnfree = true;
+    deployments = ivanEverywhere;
+  };
+  withoutPolicy = fleetOf ivanEverywhere;
+
+  installedBy = fleet: {
+    nixos = map lib.getName fleet.nixosConfigurations.srv-1.config.hjem.users.ivan.packages;
+    system-manager = map lib.getName fleet.hjemConfigurations."ivan@sm-srv".packages;
+    manual = map lib.getName fleet.hjemConfigurations."ivan@man-srv".packages;
+  };
+  followsPolicy = names: lib.elem "hello" names && lib.elem "cowsay" names;
+  systemManagerPkgs = fleet: fleet.systemConfigs.sm-srv.config.nixpkgs.pkgs;
+  systemManagerPackages = fleet: map lib.getName fleet.systemConfigs.sm-srv.config.environment.systemPackages;
+
+  # --- lock graph comparison ----------------------------------------------
+  lockDrift = import ../lib/lock-drift.nix;
+  lockPin = rev: { locked = { type = "github"; owner = "fixture"; repo = rev; inherit rev; }; };
+  rootGraph = {
+    root = "root";
+    nodes = {
+      root.inputs = { nixpkgs = "stable"; nixpkgs-unstable = "unstable"; tool = "tool"; };
+      stable = lockPin "stable";
+      unstable = lockPin "unstable";
+      tool = lockPin "tool" // {
+        inputs = { nixpkgs = [ "nixpkgs" ]; nested = "nested"; self = "tool"; };
+      };
+      nested = lockPin "nested" // { inputs.nixpkgs = [ "tool" "nixpkgs" ]; };
+    };
+  };
+  frameworkGraph = {
+    root = "framework";
+    nodes = {
+      framework.inputs = { nixpkgs = [ "tool" "nixpkgs" ]; tool = "renamedTool"; };
+      renamedStable = lockPin "stable";
+      renamedTool = lockPin "tool" // {
+        inputs = { nixpkgs = "renamedStable"; nested = "renamedNested"; self = "renamedTool"; };
+      };
+      renamedNested = lockPin "nested" // { inputs.nixpkgs = [ "nixpkgs" ]; };
+    };
+  };
+  graphWith = nodes: frameworkGraph // { nodes = frameworkGraph.nodes // nodes; };
+  driftOf = graph: (lockDrift { rootLock = rootGraph; frameworkLock = graph; }).drifted;
+  resolveRootPath = (lockDrift { rootLock = rootGraph; frameworkLock = frameworkGraph; }).resolvePath;
 in
 {
+  flake-inventory = mkCheck "flake-inventory" {
+    "an empty inventory is rejected even without check platforms" =
+      fails (lib.attrNames (configFlake { deployments = { }; } [ { systems = lib.mkForce [ ]; } ]));
+    "a nonempty inventory cannot erase its check platforms" =
+      fails (lib.attrNames (configFlake { deployments.srv-1 = { }; } [ { systems = lib.mkForce [ ]; } ]));
+    "a different architecture cannot replace a deployment's check platform" =
+      fails (lib.attrNames (configFlake { deployments.srv-1 = { }; } [
+        { systems = lib.mkForce [ "aarch64-linux" ]; }
+      ]));
+    "a nonempty inventory exports its hosts" =
+      lib.attrNames (configFlake { deployments.srv-1 = { }; } [ ]).nixosConfigurations == [ "srv-1" ];
+    "additional check platforms are allowed" =
+      lib.attrNames (configFlake { deployments.srv-1 = { }; } [
+        { systems = lib.mkForce [ "x86_64-linux" "aarch64-linux" ]; }
+      ]).nixosConfigurations == [ "srv-1" ];
+    "a manual host without users keeps its platform" =
+      lib.attrNames (configFlake { deployments.man-arm = { }; } [ ]).checks == [ "aarch64-linux" ];
+  };
+
+  lock-graph = mkCheck "lock-graph" {
+    "the same graph agrees" = driftOf rootGraph == [ ];
+    "renamed nodes, follows and cycles preserve the graph" = driftOf frameworkGraph == [ ];
+    "node references resolve from the root" = resolveRootPath [ "nixpkgs" ] == "stable";
+    "nested follows resolve from the root" = resolveRootPath [ "tool" "nested" "nixpkgs" ] == "stable";
+    "a stable pin borrowed from the root's unstable input is rejected" =
+      driftOf (graphWith { renamedStable = rootGraph.nodes.unstable; }) != [ ];
+    "transitive pin drift is rejected" =
+      driftOf (graphWith { renamedNested = lockPin "different"; }) != [ ];
+    "a transitive follows path cannot borrow another root pin" =
+      driftOf (graphWith {
+        renamedNested = frameworkGraph.nodes.renamedNested // { inputs.nixpkgs = "borrowed"; };
+        borrowed = rootGraph.nodes.unstable;
+      }) != [ ];
+    "a missing dependency edge is rejected" =
+      driftOf (graphWith { renamedNested = lockPin "nested"; }) != [ ];
+    "an extra dependency edge is rejected" =
+      driftOf (graphWith {
+        renamedStable = rootGraph.nodes.stable // { inputs.extra = "renamedNested"; };
+      }) != [ ];
+    "a framework input absent from the root is rejected" =
+      driftOf (graphWith {
+        framework.inputs = frameworkGraph.nodes.framework.inputs // { extra = "renamedStable"; };
+      }) != [ ];
+  };
+
   reconcile-clean = mkCheck "reconcile-clean" {
     "satisfied requests produce no errors" = clean.errors == [ ];
     "satisfied requests produce no warnings" = clean.warnings == [ ];
@@ -499,6 +627,9 @@ in
       failing disabledUser == [ ] && !disabledUser.programs.hyprland.enable;
     "a deployed user without an account is reported as such" =
       mentions "user 'erin' is deployed here but has no" (failing (rejectedNixos "no-account"));
+    "disabling Hjem does not waive a deployed user's account" =
+      mentions "user 'erin' is deployed here but has no" (failing (rejectedNixos "disabled-no-account"))
+      && fails (rejectedNixos "disabled-no-account").system.build.toplevel.drvPath;
     "a host may not contradict its facts" =
       mentions "hostName fact is \"bad-name\"" (failing (rejectedNixos "identity-mismatch"));
     "a host may not rewrite its facts" = fails (rejectedNixos "facts-override").contract.facts.kind;
@@ -589,6 +720,84 @@ in
         moduleArgs.facts = { };
         deployments.srv-1 = { };
       }).nixosConfigurations);
+  };
+
+  fleet-accounts = mkCheck "fleet-accounts" {
+    "identity comes from users/<user>/account.nix" =
+      lib.all
+        (host: lib.all
+          (user:
+            (login host user).uid or null == (accountFile user).uid
+            && (login host user).description or null == (accountFile user).description)
+          (deployedOn host))
+        nixosHosts;
+    "a user is the same account on every host they are deployed to" =
+      let
+        hosts = lib.filter (host: lib.elem "alice" (deployedOn host)) nixosHosts;
+      in
+      builtins.length hosts == 3
+      && lib.all (host: identity host "alice" == { inherit (accountFile "alice") uid description shell; }) hosts;
+    "groups come only from the host" =
+      lib.elem "wheel" ((login "ws-2" "alice").extraGroups or [ ])
+      && ((login "ws-1" "alice").extraGroups or null) == [ ];
+    "user keys and host keys add up" =
+      keys "ws-1" "alice" == (accountFile "alice").authorizedKeys
+      && lib.all (key: lib.elem key (keys "ws-2" "alice")) (accountFile "alice").authorizedKeys
+      && lib.any (lib.hasSuffix " alice-on-ws-2") (keys "ws-2" "alice")
+      && !(lib.any (lib.hasSuffix " alice-on-ws-2") (keys "ws-1" "alice"));
+    "a host can override a single value" =
+      (identity "srv-2" "bob").shell == "bash"
+      && (identity "ws-1" "bob").shell == (accountFile "bob").shell
+      && (identity "srv-2" "bob").uid == (accountFile "bob").uid;
+    "bash in an account file is the interactive bash login shell" =
+      identity "srv-2" "lena" == { inherit (accountFile "lena") uid description shell; };
+    "a user who is not deployed to a host gets no account there" =
+      lib.all (host: lib.subtractLists (deployedOn host) (logins host) == [ ]) nixosHosts;
+    "a host keeps accounts of its own" = lib.elem "wheel" ((login "srv-1" "admin").extraGroups or [ ]);
+    "groups in an account file are refused" =
+      fails (rejectedNixos "account-groups").networking.hostName
+      && refused "account-groups" "users/judy/account.nix" "groups";
+    "a misspelled account field is refused" =
+      fails (rejectedNixos "account-typo").networking.hostName
+      && refused "account-typo" "users/kent/account.nix" "descripton";
+    "also on a host without a system evaluation" =
+      fails (rejected "account-typo-manual").hjemConfigurations."kent@account-typo-manual".manifest.version
+      && refused "account-typo-manual" "users/kent/account.nix" "descripton";
+    # tryEval proves refusal; the condition names preserve file/field context.
+    "NixOS refuses users/mira/account.nix: uid is a string" =
+      fails (rejectedNixos "account-uid-nixos").networking.hostName;
+    "system-manager refuses users/mira/account.nix: uid is a string" =
+      fails (rejected "account-uid-system-manager").systemConfigs.account-uid-system-manager.config.contract.facts.name;
+    "manual refuses users/mira/account.nix: uid is a string" =
+      fails (rejected "account-uid-manual").hjemConfigurations."mira@account-uid-manual".manifest.version;
+    "NixOS refuses users/nick/account.nix: description is a list" =
+      fails (rejectedNixos "account-description-nixos").networking.hostName;
+    "system-manager refuses users/nick/account.nix: description is a list" =
+      fails (rejected "account-description-system-manager").systemConfigs.account-description-system-manager.config.contract.facts.name;
+    "manual refuses users/nick/account.nix: description is a list" =
+      fails (rejected "account-description-manual").hjemConfigurations."nick@account-description-manual".manifest.version;
+  };
+
+  fleet-packages = mkCheck "fleet-packages" {
+    "the overlay reaches the NixOS system's pkgs" = withPolicy.nixosConfigurations.srv-1.pkgs ? fleetMarker;
+    "nixpkgs config reaches the NixOS system's pkgs" = withPolicy.nixosConfigurations.srv-1.pkgs.config.allowUnfree;
+    "a user inside NixOS installs from them" = followsPolicy (installedBy withPolicy).nixos;
+    "the system-manager system gets the policy" =
+      systemManagerPkgs withPolicy ? fleetMarker
+      && (systemManagerPkgs withPolicy).config.allowUnfree
+      && lib.elem "hello" (systemManagerPackages withPolicy);
+    "a standalone user on a system-manager host gets it" = followsPolicy (installedBy withPolicy).system-manager;
+    "a standalone user on a manual host gets it" = followsPolicy (installedBy withPolicy).manual;
+    "without a policy the same deployments get neither" =
+      !(withoutPolicy.nixosConfigurations.srv-1.pkgs ? fleetMarker)
+      && !(systemManagerPkgs withoutPolicy ? fleetMarker)
+      && lib.all (names: !(lib.elem "hello" names) && !(lib.elem "cowsay" names)) (lib.attrValues (installedBy withoutPolicy));
+    "nothing leaks into the default fleet" =
+      !(fleet.nixosConfigurations.srv-1.pkgs ? fleetMarker)
+      && !fleet.nixosConfigurations.srv-1.pkgs.config.allowUnfree
+      && !(systemManagerPkgs fleet ? fleetMarker)
+      && !(systemManagerPkgs fleet).config.allowUnfree
+      && !(lib.elem "hello" (systemManagerPackages fleet));
   };
 }
 // lib.mapAttrs'

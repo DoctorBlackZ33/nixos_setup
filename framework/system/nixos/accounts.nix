@@ -1,9 +1,11 @@
-{ config, lib, pkgs, ... }:
+# Login accounts. Where a user is deployed, the fleet builder fills in their
+# identity from `users/<user>/account.nix`; a host adds groups, may override a
+# value, and may declare accounts of its own.
+{ config, lib, pkgs, framework, ... }:
 let
-  inherit (lib) mkOption types;
   cfg = config.sysMod.accounts;
 
-  shells = {
+  shellPackages = {
     bash = pkgs.bashInteractive;
     fish = pkgs.fish;
     zsh = pkgs.zsh;
@@ -12,44 +14,10 @@ let
   uses = shell: lib.any (account: account.shell == shell) (lib.attrValues cfg);
 in
 {
-  options.sysMod.accounts = mkOption {
-    type = types.attrsOf (types.submodule {
-      options = {
-        description = mkOption {
-          type = types.str;
-          default = "";
-        };
-        groups = mkOption {
-          type = types.listOf types.str;
-          default = [ ];
-        };
-        shell = mkOption {
-          type = types.enum (lib.attrNames shells);
-          default = "bash";
-          description = "Login shell. The matching `programs.<shell>` is enabled for it.";
-        };
-        hashedPassword = mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          description = ''
-            Password hash. It is world-readable in the Nix store, so use it for
-            throwaway machines only; real hosts use `hashedPasswordFile`.
-          '';
-        };
-        hashedPasswordFile = mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          description = "Runtime path of a file holding the password hash, for example a secret.";
-        };
-        authorizedKeys = mkOption {
-          type = types.listOf types.str;
-          default = [ ];
-          description = "SSH public keys allowed to log in.";
-        };
-      };
-    });
+  options.sysMod.accounts = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule { options = framework.accounts.hostOptions; });
     default = { };
-    description = "Declarative login accounts.";
+    description = "Declarative login accounts of this host.";
   };
 
   config = lib.mkIf (cfg != { }) {
@@ -62,8 +30,9 @@ in
       (_: account: {
         isNormalUser = true;
         inherit (account) description hashedPassword hashedPasswordFile;
+        uid = lib.mkIf (account.uid != null) account.uid;
         extraGroups = account.groups;
-        shell = shells.${account.shell};
+        shell = shellPackages.${account.shell};
         openssh.authorizedKeys.keys = account.authorizedKeys;
       })
       cfg;

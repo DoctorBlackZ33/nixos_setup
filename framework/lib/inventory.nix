@@ -1,6 +1,6 @@
 # Schema of `deployments.nix`. Field names follow clan's inventory where they
 # overlap, so a later move is mechanical; what a host *is* stays in its facts.
-{ lib }:
+{ lib, typed ? import ./typed.nix { inherit lib; } }:
 let
   inherit (lib) mkOption types;
 
@@ -29,11 +29,5 @@ in
   inherit type;
 
   # Plain data -> typed inventory, for callers outside a module system.
-  eval = deployments:
-    (lib.evalModules {
-      modules = [
-        { options.deployments = mkOption { inherit type; }; }
-        { inherit deployments; }
-      ];
-    }).config.deployments;
+  eval = deployments: typed.evalFile type "deployments.nix" deployments;
 }

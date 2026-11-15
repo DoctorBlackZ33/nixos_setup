@@ -2,18 +2,24 @@
 
 **Mod is general, Conf is specific.** `framework/` holds general modules,
 the contract and the adapters. Everything else in this repository is values:
-who runs where, what each host is, what each user wants.
+who runs where, what each host is, who each user is and what they want.
 
-The architecture is specified in `nixos-architecture-spec-v3.md` (kept outside
-this repository, next to the v2 spec). `AUDIT.md` lists what was wrong with the
-previous iteration and how it was fixed. `reference.md` is the lookup for Nix,
-the commands used here, and the module-system traps this repository ran into.
+The architecture is specified in `docs/spec.md` (v4). It supersedes the v3 and
+v2 drafts kept outside this repository; design changes are made in it, in the
+same commit as the code. `AUDIT.md` lists what was wrong with the previous
+iteration and how it was fixed. `reference.md` is the lookup for Nix, the
+inputs, options and outputs of this repository, the commands used here, and the
+module-system traps this repository ran into.
 
 ```
 .
-├── flake.nix                       # pins inputs, imports the framework flake module
+├── flake.nix                       # pins inputs, sets the package policy, imports the framework flake module
+├── checks.nix                      # checks about this configuration (config)
 ├── deployments.nix                 # the inventory: which users run on which host
+├── docs/spec.md                    # the architecture spec (v4)
+├── overlays/unstable.nix           # pkgs.unstable.<name>: single packages from nixos-unstable
 ├── users/<user>/                   # userConf: profiles, preferences, sources
+├── users/<user>/account.nix        # who the user is: the default login on every host
 ├── hosts/<host>/facts.nix          # what the host is (data)
 ├── hosts/<host>/facter.json        # optional hardware report, fills gaps in facts
 ├── hosts/<host>/default.nix        # hostConf (NixOS and system-manager hosts)
@@ -21,7 +27,8 @@ the commands used here, and the module-system traps this repository ran into.
 ├── hosts/<host>/users/<user>.nix   # optional: this user on this host
 └── framework/
     ├── flake-module.nix            # inventory + tree -> outputs, checks, tools
-    ├── lib/                        # capabilities, contract, reconcile, facts, fleet, sections
+    ├── sync-framework-lock.sh      # makes framework/flake.lock pin what flake.lock pins
+    ├── lib/                        # capabilities, contract, reconcile, facts, accounts, fleet, sections
     ├── home/<program>.nix          # user-layer modules (class homeMod)
     ├── system/common/              # system modules valid on NixOS and system-manager
     ├── system/nixos/               # NixOS-only system modules and capability providers
@@ -85,18 +92,44 @@ nix eval --json "$F#nixosConfigurations.desktop.config.contract.wanted" \
 
 **Add a NixOS host.** Create `hosts/<host>/facts.nix` (`hostName`, `managed`,
 `kind`, and `platform` unless a report supplies it) and
-`hosts/<host>/default.nix` (hardware, `system.stateVersion`, accounts), then add
-one line to `deployments.nix`. Outputs and its check appear by themselves.
-Optionally generate the hardware report on the machine:
+`hosts/<host>/default.nix` (hardware, `system.stateVersion`, the groups of the
+users it receives), then add one line to `deployments.nix`. Outputs and its
+check appear by themselves. Optionally generate the hardware report on the
+machine:
 
 ```sh
 sudo nix run nixpkgs#nixos-facter -- -o facter.json   # then commit it as hosts/<host>/facter.json
 ```
 
-**Put a user on a host.** Add the name to `users` in `deployments.nix`. On a
-NixOS host also declare the login in its hostConf (`sysMod.accounts.<user>`);
-the build tells you if you forget. `hosts/<host>/users/<user>.nix` is optional
-and holds what differs on that host.
+**Put a user on a host.** Three files, each deciding one thing:
+
+- `deployments.nix` places the user: add the name to that deployment's `users`.
+- `users/<user>/account.nix` says who the user is, once, as the default for
+  every host: `description`, `uid`, `shell` (`bash`, `fish` or `zsh`),
+  `authorizedKeys`, `hashedPassword`, `hashedPasswordFile`.
+- The host's `default.nix` decides what the user may do there:
+  `sysMod.accounts.<user>.groups`. It may also add `authorizedKeys`, set a
+  password for a throwaway guest, override a single value (`shell`, even
+  `uid`), or declare an account of its own that has no `users/` directory.
+
+```nix
+# users/black/account.nix
+{
+  description = "Black";
+  uid = 1000;
+  shell = "fish";
+}
+
+# hosts/common/vm.nix, imported by both reference hosts
+sysMod.accounts.black.groups = [ "wheel" "networkmanager" "video" "input" ];
+```
+
+`groups` or `services` in an account file, or a misspelled field, fails the
+build with the file and the field named. On a NixOS host, a deployed user who
+has no account at all is reported by name. On system-manager and manual hosts
+the login belongs to the distribution; the account file is checked there but
+not applied. `hosts/<host>/users/<user>.nix` is optional and holds what
+differs for the user layer on that host.
 
 **Add a non-NixOS host.** `facts.nix` with `managed = "system-manager"` (plus a
 `default.nix` using only `framework/system/common` options and declaring what
@@ -115,6 +148,21 @@ Structured config uses `settings` typed with `pkgs.formats` and
 several modules uses named `sections`. No user-, host- or checkout-specific
 value belongs in it, not even as a default.
 
+**Take a package from unstable.** Every host is built from the one nixpkgs in
+`flake.nix`, the `nixos-26.05` branch. A single newer package comes from the
+`nixpkgs-unstable` input as `pkgs.unstable.<name>`:
+
+```nix
+packages = [ pkgs.unstable.<name> ];                   # in a user profile
+environment.systemPackages = [ pkgs.unstable.<name> ]; # in a hostConf
+```
+
+`overlays/unstable.nix` provides it and is listed in `framework.overlays` in
+`flake.nix`. Overlays and nixpkgs settings such as `allowUnfree` belong there
+(`framework.overlays`, `framework.nixpkgsConfig`), because from there they
+reach NixOS systems, system-manager systems and standalone users alike. A whole
+host or profile stays on the stable branch.
+
 **Add a capability.** A new *name* of an existing kind needs only a provider
 that enables it and sets `contract.provides.<kind>.<name>`. A new *kind* is one
 entry in `framework/lib/capabilities.nix` plus its provider.
@@ -131,9 +179,12 @@ uses (`inputs`, `pkgs`, `facts`, `framework`) are rejected.
 | `desktop` | The libvirt guest as a workstation: facts from `facter.json`, greeter, development tools, audio requested by the host, `black` with Hyprland and Quickshell |
 | `server` | The same guest as a server: networkd, no compositor, no compilers; `black` gets only the shell profile because the user profiles gate on `facts.kind` |
 
-Both keep password SSH for the throwaway guest. A real host lists
-`sysMod.accounts.<user>.authorizedKeys` and leaves password logins off; the
-build refuses a key-only sshd that nobody could log into.
+`black`'s account (uid 1000, fish) comes from `users/black/account.nix`; both
+hosts import `hosts/common/vm.nix`, which adds the same groups and the guest's
+password. Both keep password SSH for the throwaway guest. A real host gets keys
+from the user's `authorizedKeys`, plus any its own
+`sysMod.accounts.<user>.authorizedKeys` adds, and leaves password logins off;
+the build refuses a key-only sshd that nobody could log into.
 
 ## Secrets
 
@@ -158,16 +209,47 @@ have a secrets backend.
 ## Checks
 
 ```sh
-nix flake check --no-build --all-systems --option allow-import-from-derivation false "$F"
+nix flake check --no-build --all-systems --no-update-lock-file --option allow-import-from-derivation false "$F"
 ```
 
-evaluates everything: one check per deployment (`nixos-<name>`,
-`system-<name>`, `home-<user>@<name>`) and the framework's own checks against
-the inputs this flake locks (`framework-*`). Without `--no-build` it also
-builds every system. The synthetic fleet in `framework/checks/fleet` runs 13
-hosts (workstations and servers; NixOS, system-manager, manual; two
-architectures) through the same code as the real inventory and asserts
-behaviour, including the cases that must be refused.
+evaluates everything:
+
+| Check | What it covers |
+|---|---|
+| `nixos-<name>`, `system-<name>`, `home-<user>@<name>` | one per deployment: the system toplevel, the system-manager config, a standalone user's files and packages |
+| `config` | this configuration (`checks.nix`): `framework/flake.lock` agrees with `flake.lock` at every shared input path; every input takes nixpkgs from the root (an input whose `nixpkgs` leads elsewhere is reported as `different at: <input path>`); `black` has the same uid, description and shell on every host (credentials and keys are not compared); `pkgs.unstable` is newer than the base on every host and reaches the users inside NixOS; the server stays headless; the graphical layer reaches the workstation only; no contract assertion fails |
+| `framework-*` | the framework's own checks against the inputs this flake locks, among them `framework-flake-inventory` (an empty inventory, or a `systems` list missing a deployment's platform, is refused), `framework-lock-graph` (the path-wise lock comparison), `framework-fleet-accounts` and `framework-fleet-packages` |
+
+Without `--no-build` it also builds every system; `--no-update-lock-file`
+makes the run fail instead of changing a lock. The synthetic fleet in
+`framework/checks/fleet` runs 13 hosts (workstations and servers; NixOS,
+system-manager, manual; two architectures) through the same code as the real
+inventory and asserts behaviour, including the cases that must be refused. The
+same command with `"$F/framework"` runs the framework's checks against its own
+lock.
+
+## Updating
+
+Every host is built from the one nixpkgs in `flake.nix`, the `nixos-26.05`
+branch: the framework's own `nixpkgs` input follows it, and there is no other
+selector. If any input's `nixpkgs` stops following it, the `config` check fails
+and names the input. `flake.lock` pins its revision. To update, in the
+repository root:
+
+```sh
+nix flake update                 # all inputs; or one: nix flake update nixpkgs
+nix run .#sync-framework-lock    # framework/flake.lock agrees with flake.lock, path by path
+nix flake check --no-build --all-systems --no-update-lock-file --option allow-import-from-derivation false
+```
+
+`nix flake update` changes `flake.lock` only. `sync-framework-lock` re-locks
+`framework/flake.lock` from the root lock (`nix flake lock --reference-lock-file
+../flake.lock --output-lock-file flake.lock` inside `framework/`), then compares
+the two locks path by path with the same code as the `config` check and exits
+non-zero, listing every input path that disagrees. If the shared input paths
+remain out of sync, the `config` check fails. A root-only change touches no
+shared path: `nix flake update nixpkgs-unstable` moves only the packages taken
+from unstable. Commit both lock files together.
 
 After changing an input list, run `nix flake lock` and, if the framework's
 inputs changed, `nix flake update framework`. Files under `framework/` must be

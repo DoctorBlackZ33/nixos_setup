@@ -7,16 +7,19 @@ let
   cfg = config.framework;
 
   framework = import ./lib {
-    inherit (cfg.nixpkgs) lib;
+    inherit (frameworkInputs.nixpkgs) lib;
     inputs = frameworkInputs;
   };
 
   fleet = import ./lib/fleet.nix {
-    inherit (cfg.nixpkgs) lib;
+    inherit (frameworkInputs.nixpkgs) lib;
     inherit framework;
-    inherit (cfg) nixpkgs root deployments secrets moduleArgs;
+    inherit (cfg) root deployments secrets moduleArgs overlays nixpkgsConfig;
     inputs = frameworkInputs;
   };
+
+  # Keep this out of the systems definition: its default comes from the fleet.
+  missingSystems = lib.subtractLists config.systems fleet.systems;
 
   packagesOf = input: system: frameworkInputs.${input}.packages.${system} or { };
 in
@@ -27,11 +30,21 @@ in
       description = "Directory containing `hosts/` and `users/`.";
     };
 
-    nixpkgs = mkOption {
-      type = types.raw;
-      default = inputs.nixpkgs;
-      defaultText = lib.literalExpression "inputs.nixpkgs";
-      description = "The nixpkgs flake every host and user is built from.";
+    overlays = mkOption {
+      type = types.listOf types.raw;
+      default = [ ];
+      example = lib.literalExpression "[ (final: prev: { unstable = import inputs.nixpkgs-unstable { inherit (prev) system; }; }) ]";
+      description = ''
+        nixpkgs overlays for every host and user. They apply identically to
+        NixOS systems, system-manager systems and standalone users.
+      '';
+    };
+
+    nixpkgsConfig = mkOption {
+      type = types.attrsOf types.raw;
+      default = { };
+      example = { allowUnfree = true; };
+      description = "nixpkgs `config`, applied on the same three paths as `overlays`.";
     };
 
     deployments = mkOption {
@@ -93,7 +106,11 @@ in
   config = {
     systems = lib.mkDefault fleet.systems;
 
-    flake =
+    flake = if cfg.deployments == { } then
+      throw "framework.deployments is empty. Add at least one host to deployments.nix (for example: { desktop.users = [ \"alice\" ]; })."
+    else if missingSystems != [ ] then
+      throw "systems must include every deployment platform (missing: ${lib.concatStringsSep ", " missingSystems})."
+    else
       {
         inherit (fleet) nixosConfigurations systemConfigs hjemConfigurations;
       }
@@ -115,7 +132,6 @@ in
           (name: lib.nameValuePair "framework-${name}")
           (import ./checks {
             inherit pkgs system;
-            inherit (cfg) nixpkgs;
             inputs = frameworkInputs;
           }));
 
@@ -123,6 +139,7 @@ in
       #   nix run .#hjem -- standalone switch --flake . --flake-attr 'hjemConfigurations."<user>@<name>"'
       #   nix run .#system-manager -- switch --flake .#<name> --sudo
       #   nix run .#agenix -- rekey -a
+      #   nix run .#sync-framework-lock        (after `nix flake update`)
       packages =
         lib.optionalAttrs (packagesOf "hjem" system ? hjem) { inherit (packagesOf "hjem" system) hjem; }
         // lib.optionalAttrs (packagesOf "system-manager" system ? default) {
@@ -130,6 +147,13 @@ in
         }
         // lib.optionalAttrs (cfg.secrets != null && packagesOf "agenix-rekey" system ? default) {
           agenix = (packagesOf "agenix-rekey" system).default;
+        }
+        // {
+          sync-framework-lock = pkgs.writeShellApplication {
+            name = "sync-framework-lock";
+            runtimeInputs = [ pkgs.jq pkgs.git ];
+            text = builtins.readFile ./sync-framework-lock.sh;
+          };
         };
 
       formatter = pkgs.alejandra;

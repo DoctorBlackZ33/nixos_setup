@@ -19,15 +19,15 @@
     passwordAuthentication = true;
   };
 
+  # Who black is comes from users/black/account.nix; these are the guest's
+  # own decisions about that account.
   sysMod.accounts.black = {
-    description = "Black";
     groups = [
       "wheel"
       "networkmanager"
       "video"
       "input"
     ];
-    shell = "fish";
     # Bootstrap password of the throwaway guest; it is readable in the store.
     # A real host uses `hashedPasswordFile` backed by a secret.
     hashedPassword = "$6$nixosdev$QyqUycwLZRiiEsmZ4jzHtrAwIZ8EdPikwJnmrFAygYLP9/LO2wGcFGF4UrykL8niiDRN76b8ayhPtTAG/Pj7x1";

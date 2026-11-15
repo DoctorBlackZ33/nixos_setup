@@ -1,7 +1,7 @@
 # Option types for requires / provides / facts, derived from the capability
 # table. Plain data (fixtures, hand-written host files) goes through `eval*`
 # so that defaults apply and typos fail in every adapter the same way.
-{ lib, capabilities }:
+{ lib, capabilities, typed }:
 let
   inherit (lib) mkOption types;
   inherit (capabilities) kinds;
@@ -126,22 +126,14 @@ let
       };
     };
   };
-
-  # Evaluates plain definitions through an option type.
-  evalTyped = type: definitions:
-    (lib.evalModules {
-      modules =
-        [ { options.value = mkOption { inherit type; }; } ]
-        ++ map (value: { inherit value; }) definitions;
-    }).config.value;
 in
 {
   inherit requiresType providesType factsType;
 
-  evalRequires = requires: evalTyped requiresType [ requires ];
-  evalProvides = provides: evalTyped providesType [ provides ];
+  evalRequires = requires: typed.eval requiresType [ requires ];
+  evalProvides = provides: typed.eval providesType [ provides ];
 
   # Later definitions win over earlier ones only through priorities, so
   # callers pass detected values wrapped in `lib.mkDefault`.
-  evalFacts = definitions: evalTyped factsType definitions;
+  evalFacts = definitions: typed.eval factsType definitions;
 }

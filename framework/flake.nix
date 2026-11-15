@@ -5,7 +5,9 @@
   # config flake pins them by making each one follow its own input, so its
   # lock file is the single source of truth for what gets deployed.
   inputs = {
-    nixpkgs.url = "https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz";
+    # A release branch; the config flake's lock decides the revision, and
+    # `sync-framework-lock` makes this flake's own lock pin the same one.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     flake-parts.url = "github:hercules-ci/flake-parts";
 
@@ -68,7 +70,7 @@
 
       perSystem = { pkgs, system, ... }: {
         checks = import ./checks {
-          inherit pkgs system nixpkgs inputs;
+          inherit pkgs system inputs;
         };
 
         formatter = pkgs.alejandra;

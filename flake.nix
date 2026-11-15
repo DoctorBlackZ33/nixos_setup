@@ -4,7 +4,12 @@
   # Every external dependency is pinned here; the framework follows these
   # inputs, so this lock file decides what is deployed.
   inputs = {
-    nixpkgs.url = "https://releases.nixos.org/nixos/26.05/nixos-26.05.6503.21ea275a7c46/nixexprs.tar.xz";
+    # The one nixpkgs every host is built from. `nix flake update nixpkgs`
+    # moves all of them; system-manager's branch must match this release.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+
+    # Only reachable as `pkgs.unstable.<name>` (overlays/unstable.nix).
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     flake-parts.url = "github:hercules-ci/flake-parts";
 
@@ -47,11 +52,15 @@
 
   outputs = inputs @ { flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      imports = [ inputs.framework.flakeModules.default ];
+      imports = [
+        inputs.framework.flakeModules.default
+        ./checks.nix
+      ];
 
       framework = {
         root = ./.;
         deployments = import ./deployments.nix;
+        overlays = [ (import ./overlays/unstable.nix inputs.nixpkgs-unstable) ];
 
         # Secrets stay off until a master identity exists; then:
         #   secrets = {
