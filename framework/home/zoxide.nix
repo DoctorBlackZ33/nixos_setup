@@ -1,32 +1,37 @@
 { config, lib, pkgs, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
+  inherit (lib) mkOption types;
   cfg = config.zoxide;
-  zoxideExe = if cfg.package != null then lib.getExe cfg.package else "zoxide";
-
-  fishIntegration = ''
-    if status is-interactive
-      ${lib.concatStringsSep " " ([ zoxideExe "init" "fish" ] ++ cfg.settings.options)} | source
-    end
-  '';
+  zoxide = if cfg.package != null then lib.getExe cfg.package else "zoxide";
 in
 {
-  options.zoxide = helpers.mkProgramOptions { name = "zoxide"; package = pkgs.zoxide; } // {
-    enableFishIntegration = lib.mkOption {
-      type = lib.types.bool;
+  options.zoxide = {
+    enable = lib.mkEnableOption "zoxide";
+    package = lib.mkPackageOption pkgs "zoxide" { nullable = true; };
+
+    flags = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [ "--cmd=cd" ];
+      description = "Flags passed to `zoxide init`.";
+    };
+
+    enableFishIntegration = mkOption {
+      type = types.bool;
       default = true;
-      description = "Enable zoxide's Fish integration.";
+      description = "Initialise zoxide in fish when the fish module is enabled.";
     };
   };
 
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    zoxide.settings.options = lib.mkDefault [ "--cmd=cd" ];
-
     fish.sections.zoxide = lib.mkIf (config.fish.enable && cfg.enableFishIntegration) {
-      order = helpers.orders.integrations;
-      text = fishIntegration;
+      text = ''
+        if status is-interactive
+          ${lib.concatStringsSep " " ([ zoxide "init" "fish" ] ++ cfg.flags)} | source
+        end
+      '';
     };
   };
 }

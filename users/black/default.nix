@@ -1,44 +1,12 @@
-# userConf for black: profiles, preferences and sources.
-{ pkgs, ... }:
+# userConf for black. Every profile is imported everywhere (R1) and gates
+# itself on host facts, so the same user lands on a server without a
+# compositor or an IDE.
+{ ... }:
 {
-  imports = [ ./sources.nix ];
-
-  packages = with pkgs; [
-    bashInteractive
-    btop
-    grim
-    home-manager
-    kitty
-    lazygit
-    wl-clipboard
+  imports = [
+    ./cli.nix
+    ./development.nix
+    ./desktop.nix
+    ./nvim.nix
   ];
-
-  environment = {
-    EDITOR = "nvim";
-    VISUAL = "nvim";
-  };
-
-  direnv.enable = true;
-  fish.enable = true;
-  fish.settings.commandColor = "brcyan";
-  fish.settings.aliases = {
-    ll = "ls -lah";
-    la = "ls -A";
-  };
-  gh.enable = true;
-  git.enable = true;
-  nvf.enable = true;
-  yazi.enable = true;
-  zoxide.enable = true;
-
-  git.settings = {
-    user.name = "DoctorBlack Z 33";
-    user.email = "72605982+DoctorBlackZ33@users.noreply.github.com";
-    init.defaultBranch = "main";
-  };
-
-  fuzzel.enable = true;
-  hyprland.enable = true;
-  mako.enable = true;
-  quickshell.enable = true;
 }

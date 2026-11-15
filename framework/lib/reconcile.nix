@@ -1,92 +1,106 @@
-{ lib }:
+# Pure contract logic. `requests` maps a source label ("user black",
+# "system") to a typed `requires` value, so every message can say who asked.
+{ lib, capabilities }:
 let
-  contract = import ./contract.nix { inherit lib; };
+  inherit (capabilities) kinds;
 
-  missingFact = value: value == null || (lib.isList value && value == [ ]);
+  # A fact is missing when it is unknown or says "no".
+  missingFact = value:
+    value == null || value == false || value == [ ] || value == "" || value == { };
 
-  factValue = facts: path: lib.attrByPath (lib.splitString "." path) null facts;
+  # name -> [ { source; request; } ] for one kind across all sources.
+  collect = kindName: requests:
+    lib.zipAttrs (lib.mapAttrsToList
+      (source: requires:
+        lib.mapAttrs (_: request: { inherit source request; }) requires.${kindName})
+      requests);
 
-  capabilityReport = { kind, requires, provides }:
-    let
-      names = lib.attrNames requires;
-      entries = map
-        (name: {
-          inherit name;
-          required = requires.${name}.required or true;
-          supplied = builtins.hasAttr name provides && provides.${name};
-        })
-        names;
-    in
+  # One requester needing it makes it required; parameters come from the
+  # first requester and disagreement is reported as a conflict.
+  mergeEntries = parameters: entries:
     {
-      errors = map
-        (entry: "requires ${kind} '${entry.name}' but the host does not provide it")
-        (builtins.filter (entry: entry.required && !entry.supplied) entries);
-      warnings = map
-        (entry: "optional ${kind} '${entry.name}' is not provided by the host")
-        (builtins.filter (entry: !entry.required && !entry.supplied) entries);
+      required = lib.any (entry: entry.request.required) entries;
+      sources = map (entry: entry.source) entries;
+    }
+    // lib.mapAttrs (parameter: _: (builtins.head entries).request.${parameter}) parameters;
+
+  conflictsOf = kind: name: entries:
+    lib.concatLists (lib.mapAttrsToList
+      (parameter: _:
+        let
+          values = lib.unique (map (entry: entry.request.${parameter}) entries);
+        in
+        lib.optional (builtins.length values > 1) {
+          required = true;
+          sources = map (entry: entry.source) entries;
+          message =
+            "${kind.label} '${name}' is requested with conflicting ${parameter}: "
+            + lib.concatMapStringsSep ", "
+              (entry: "${toString entry.request.${parameter}} by ${entry.source}")
+              entries;
+        })
+      kind.parameters);
+
+  merge = requests:
+    lib.mapAttrs
+      (kindName: kind: lib.mapAttrs (_: mergeEntries kind.parameters) (collect kindName requests))
+      kinds
+    // {
+      facts = lib.mapAttrs (_: mergeEntries { }) (collect "facts" requests);
     };
 
-  portalReport = { requires, provides }:
-    map
-      (portal: "requires portal '${portal}' but the host does not provide it")
-      (builtins.filter (portal: !(builtins.elem portal provides.portals)) requires.portals);
+  requesters = want: lib.concatStringsSep ", " want.sources;
 
-  udevReport = { requires, provides }:
-    let
-      provided = map toString provides.udev.rules;
-      required = map toString requires.udev.rules;
-    in
-    map
-      (rule: "requires udev rule '${rule}' but the host does not provide it")
-      (builtins.filter (rule: !(builtins.elem rule provided)) required);
-
-  factReport = { requires, facts }:
-    let
-      entries = lib.mapAttrsToList
-        (path: requirement: {
-          inherit path;
-          required = requirement.required or true;
-          value = factValue facts path;
-        })
-        requires.facts;
-      absent = builtins.filter (entry: missingFact entry.value) entries;
-    in
-    {
-      errors = map (entry: "requires fact '${entry.path}' but the host does not report it") (builtins.filter (entry: entry.required) absent);
-      warnings = map (entry: "optional fact '${entry.path}' is not reported by the host") (builtins.filter (entry: !entry.required) absent);
-    };
+  verdict = findings: {
+    errors = map (finding: finding.message) (lib.filter (finding: finding.required) findings);
+    warnings = map (finding: finding.message) (lib.filter (finding: !finding.required) findings);
+  };
 in
-rec {
-  inherit factValue;
+{
+  # kind -> name -> { required; sources; <parameters>; } plus `facts`.
+  inherit merge;
 
-  reconcile = { requires, provides, facts }:
+  # -> { errors; warnings; forSources }. `forSources [ "user alice" ]` is the
+  # same verdict restricted to what those requesters are involved in.
+  reconcile = { host, requests, provides, facts }:
     let
-      requires' = contract.normaliseRequires requires;
-      provides' = lib.recursiveUpdate contract.emptyProvides provides;
-      pam = capabilityReport { kind = "PAM service"; requires = requires'.pam; provides = provides'.pam; };
-      services = capabilityReport { kind = "service"; requires = requires'.services; provides = provides'.services; };
-      setuid = capabilityReport { kind = "setuid wrapper"; requires = requires'.setuid; provides = provides'.setuid; };
-      secrets = capabilityReport { kind = "secret"; requires = requires'.secrets; provides = provides'.secrets; };
-      portals = portalReport { requires = requires'; provides = provides'; };
-      udev = udevReport { requires = requires'; provides = provides'; };
-      factChecks = factReport { requires = requires'; inherit facts; };
+      wanted = merge requests;
+
+      missingCapabilities = lib.concatLists (lib.mapAttrsToList
+        (kindName: kind:
+          lib.mapAttrsToList
+            (name: want: {
+              inherit (want) required sources;
+              message = "${kind.label} '${name}' is requested by ${requesters want} but host '${host}' does not provide it";
+            })
+            (lib.filterAttrs (name: _: !(provides.${kindName}.${name} or false)) wanted.${kindName}))
+        kinds);
+
+      missingFacts = lib.mapAttrsToList
+        (path: want: {
+          inherit (want) required sources;
+          message = "fact '${path}' is requested by ${requesters want} but host '${host}' does not report it";
+        })
+        (lib.filterAttrs
+          (path: _: missingFact (lib.attrByPath (lib.splitString "." path) null facts))
+          wanted.facts);
+
+      conflicts = lib.concatLists (lib.mapAttrsToList
+        (kindName: kind:
+          lib.concatLists (lib.mapAttrsToList (conflictsOf kind) (collect kindName requests)))
+        kinds);
+
+      findings = missingCapabilities ++ missingFacts ++ conflicts;
     in
-    {
-      errors = lib.concatLists [
-        pam.errors
-        services.errors
-        setuid.errors
-        secrets.errors
-        portals
-        udev
-        factChecks.errors
-      ];
-      warnings = lib.concatLists [
-        pam.warnings
-        services.warnings
-        setuid.warnings
-        secrets.warnings
-        factChecks.warnings
-      ];
+    verdict findings // {
+      forSources = sources:
+        verdict (lib.filter (finding: lib.any (source: lib.elem source finding.sources) sources) findings);
     };
+
+  # One multi-line message per host for assertions and throws.
+  report = host: errors:
+    lib.concatStringsSep "\n" (
+      [ "contract violations on host '${host}':" ]
+      ++ map (error: "  - ${error}") errors
+    );
 }

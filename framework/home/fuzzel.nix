@@ -1,30 +1,29 @@
 { config, lib, pkgs, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
   cfg = config.fuzzel;
-  keyValue = lib.generators.toKeyValue {
-    mkKeyValue = lib.generators.mkKeyValueDefault { } "=";
-  };
+  format = pkgs.formats.ini { };
 in
 {
-  options.fuzzel = helpers.mkProgramOptions { name = "fuzzel"; package = pkgs.fuzzel; };
+  options.fuzzel = {
+    enable = lib.mkEnableOption "fuzzel";
+    package = lib.mkPackageOption pkgs "fuzzel" { nullable = true; };
+
+    settings = lib.mkOption {
+      inherit (format) type;
+      default = { };
+      example = {
+        main.width = 50;
+        colors.background = "202124ee";
+      };
+      description = "Contents of ~/.config/fuzzel/fuzzel.ini, by section.";
+    };
+  };
 
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    fuzzel.sections.defaults = {
-      order = helpers.orders.defaults;
-      text = builtins.readFile ./defaults/fuzzel.ini;
-    };
-
-    fuzzel.sections.settings = lib.mkIf (cfg.settings != { }) {
-      order = helpers.orders.defaults + 10;
-      text = keyValue cfg.settings;
-    };
-
-    files."fuzzel/fuzzel.ini".text = helpers.renderSections {
-      sections = cfg.sections;
-      comment = "#";
+    files = lib.mkIf (cfg.settings != { }) {
+      ".config/fuzzel/fuzzel.ini".source = format.generate "fuzzel.ini" cfg.settings;
     };
   };
 }

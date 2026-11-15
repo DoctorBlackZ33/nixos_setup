@@ -1,214 +1,147 @@
-{ lib }:
+# Option types for requires / provides / facts, derived from the capability
+# table. Plain data (fixtures, hand-written host files) goes through `eval*`
+# so that defaults apply and typos fail in every adapter the same way.
+{ lib, capabilities }:
 let
   inherit (lib) mkOption types;
+  inherit (capabilities) kinds;
 
-  capabilityType = types.submodule {
-    options = {
-      required = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Whether a missing capability is an error (true) or a warning (false).";
-      };
-    };
+  requiredOption = mkOption {
+    type = types.bool;
+    default = true;
+    description = "Whether a miss fails evaluation (true) or only warns (false).";
   };
 
-  secretType = types.submodule {
-    options = {
-      mode = mkOption {
-        type = types.str;
-        default = "0400";
-        description = "Mode the decrypted runtime path must have. Never the secret value.";
-      };
-      required = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Whether a missing secret is an error (true) or a warning (false).";
-      };
-    };
-  };
-
-  factRequirementType = types.submodule {
-    options = {
-      required = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Whether a missing fact is an error (true) or a warning (false).";
-      };
-    };
+  requestType = parameters: types.submodule {
+    options = { required = requiredOption; } // parameters;
   };
 
   requiresType = types.submodule {
-    options = {
-      pam = mkOption {
-        type = types.attrsOf capabilityType;
-        default = { };
-        description = "PAM services the configuration needs, for example `pam.hyprlock = { };`.";
+    options =
+      lib.mapAttrs
+        (_: kind: mkOption {
+          type = types.attrsOf (requestType kind.parameters);
+          default = { };
+          inherit (kind) description;
+        })
+        kinds
+      // {
+        facts = mkOption {
+          type = types.attrsOf (requestType { });
+          default = { };
+          description = ''
+            Host facts that must be known and truthy, addressed by dotted path,
+            for example `facts."gpu.vendor" = { };`.
+          '';
+        };
       };
-      portals = mkOption {
-        type = types.listOf types.str;
-        default = [ ];
-        description = "XDG desktop portal implementations the configuration needs, by short name.";
-      };
-      services = mkOption {
-        type = types.attrsOf capabilityType;
-        default = { };
-        description = "System services the configuration needs, for example `services.pipewire = { };`.";
-      };
-      udev.rules = mkOption {
-        type = types.listOf (types.either types.str types.package);
-        default = [ ];
-        description = "udev rules the configuration needs.";
-      };
-      setuid = mkOption {
-        type = types.attrsOf capabilityType;
-        default = { };
-        description = "Setuid wrappers the configuration needs.";
-      };
-      secrets = mkOption {
-        type = types.attrsOf secretType;
-        default = { };
-        description = "Secrets the configuration needs by name; only paths are handed to modules.";
-      };
-      facts = mkOption {
-        type = types.attrsOf factRequirementType;
-        default = { };
-        description = "Host facts the configuration needs, addressed by attribute path.";
-      };
-    };
   };
 
   providesType = types.submodule {
-    options = {
-      pam = mkOption {
+    options = lib.mapAttrs
+      (_: kind: mkOption {
         type = types.attrsOf types.bool;
         default = { };
-        description = "PAM services this host supplies.";
-      };
-      portals = mkOption {
-        type = types.listOf types.str;
-        default = [ ];
-        description = "Portal implementations this host supplies.";
-      };
-      services = mkOption {
-        type = types.attrsOf types.bool;
-        default = { };
-        description = "System services this host supplies.";
-      };
-      udev.rules = mkOption {
-        type = types.listOf types.str;
-        default = [ ];
-        description = "udev rules this host supplies.";
-      };
-      setuid = mkOption {
-        type = types.attrsOf types.bool;
-        default = { };
-        description = "Setuid wrappers this host supplies.";
-      };
-      secrets = mkOption {
-        type = types.attrsOf types.bool;
-        default = { };
-        description = "Secrets this host supplies.";
-      };
-    };
+        description = "Which ${kind.label}s this host supplies.";
+      })
+      kinds;
   };
 
+  # `null` means unknown. A requirement on an unknown fact fails, so facts
+  # carry no invented defaults.
   factsType = types.submodule {
     options = {
+      name = mkOption {
+        type = types.str;
+        description = "Inventory key of this host (set by the deployment builder).";
+      };
       hostName = mkOption {
         type = types.str;
-        description = "Host name of this machine.";
+        description = "Network host name.";
       };
       platform = mkOption {
         type = types.str;
-        default = "x86_64-linux";
-        description = "Nix system string.";
-      };
-      location = mkOption {
-        type = types.str;
-        default = "unknown";
-        description = "Physical or logical location.";
+        example = "x86_64-linux";
+        description = "Nix system the host runs.";
       };
       managed = mkOption {
         type = types.enum [ "nixos" "system-manager" "manual" ];
-        default = "nixos";
-        description = "Which system adapter owns this host.";
+        description = ''
+          Who owns the system layer: a NixOS configuration, a system-manager
+          configuration, or nobody (only the user layer is deployed).
+        '';
       };
-      gpu = mkOption {
-        type = types.submodule {
-          options = {
-            vendor = mkOption {
-              type = types.enum [ "amd" "intel" "nvidia" "virtual" "unknown" ];
-              default = "unknown";
-            };
-            vulkan = mkOption {
-              type = types.bool;
-              default = false;
-            };
-          };
+      kind = mkOption {
+        type = types.enum [ "workstation" "server" ];
+        description = "The one high-level machine type. Framework modules gate on it.";
+      };
+      tags = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Free-form groupings for user and host configuration. The framework does not interpret them.";
+      };
+      location = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      virtualisation = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "kvm";
+        description = "Hypervisor the host runs under, or null on bare metal / unknown.";
+      };
+      gpu = {
+        vendor = mkOption {
+          type = types.nullOr (types.enum [ "amd" "intel" "nvidia" "virtual" ]);
+          default = null;
         };
-        default = { };
-        description = "GPU facts.";
+        vulkan = mkOption {
+          type = types.nullOr types.bool;
+          default = null;
+        };
       };
       displays = mkOption {
         type = types.listOf (types.submodule {
           options = {
-            width = mkOption { type = types.int; };
-            height = mkOption { type = types.int; };
+            width = mkOption { type = types.ints.positive; };
+            height = mkOption { type = types.ints.positive; };
             refresh = mkOption {
-              type = types.int;
-              default = 60;
+              type = types.nullOr types.ints.positive;
+              default = null;
             };
           };
         });
         default = [ ];
-        description = "Attached displays with their native mode.";
+      };
+      hostKey = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "ssh-ed25519 AAAA...";
+        description = "SSH host public key. Secrets for this host are encrypted to it.";
       };
       extra = mkOption {
         type = types.attrsOf types.anything;
         default = { };
-        description = "Additional hand-written facts outside the typed schema.";
+        description = "Hand-written facts outside the typed schema.";
       };
     };
   };
 
-  emptyRequires = {
-    pam = { };
-    portals = [ ];
-    services = { };
-    udev.rules = [ ];
-    setuid = { };
-    secrets = { };
-    facts = { };
-  };
-
-  emptyProvides = {
-    pam = { };
-    portals = [ ];
-    services = { };
-    udev.rules = [ ];
-    setuid = { };
-    secrets = { };
-  };
-
-  unionList = a: b: lib.unique (a ++ b);
-
-  normaliseRequires = requires: lib.recursiveUpdate emptyRequires requires;
-
-  mergeRequires = a: b:
-    let
-      left = normaliseRequires a;
-      right = normaliseRequires b;
-    in
-    {
-      pam = left.pam // right.pam;
-      portals = unionList left.portals right.portals;
-      services = left.services // right.services;
-      udev.rules = unionList left.udev.rules right.udev.rules;
-      setuid = left.setuid // right.setuid;
-      secrets = left.secrets // right.secrets;
-      facts = left.facts // right.facts;
-    };
+  # Evaluates plain definitions through an option type.
+  evalTyped = type: definitions:
+    (lib.evalModules {
+      modules =
+        [ { options.value = mkOption { inherit type; }; } ]
+        ++ map (value: { inherit value; }) definitions;
+    }).config.value;
 in
 {
-  inherit requiresType providesType factsType emptyRequires emptyProvides normaliseRequires mergeRequires;
+  inherit requiresType providesType factsType;
+
+  evalRequires = requires: evalTyped requiresType [ requires ];
+  evalProvides = provides: evalTyped providesType [ provides ];
+
+  # Later definitions win over earlier ones only through priorities, so
+  # callers pass detected values wrapped in `lib.mkDefault`.
+  evalFacts = definitions: evalTyped factsType definitions;
 }

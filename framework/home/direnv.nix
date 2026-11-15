@@ -1,57 +1,56 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, framework, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
+  inherit (lib) mkOption types;
   cfg = config.direnv;
-  toToml = settings: builtins.readFile ((pkgs.formats.toml { }).generate "direnv-settings.toml" settings);
-  direnvExe = if cfg.package != null then lib.getExe cfg.package else "direnv";
-
-  fishIntegration = ''
-    if status is-interactive
-      if not functions -q __direnv_export_eval
-        ${direnvExe} hook fish | source
-      end
-    end
-  '';
+  format = pkgs.formats.toml { };
+  direnv = if cfg.package != null then lib.getExe cfg.package else "direnv";
 in
 {
-  options.direnv = helpers.mkProgramOptions { name = "direnv"; package = pkgs.direnv; } // {
-    enableFishIntegration = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable direnv's Fish integration.";
+  options.direnv = {
+    enable = lib.mkEnableOption "direnv";
+    package = lib.mkPackageOption pkgs "direnv" { nullable = true; };
+
+    settings = mkOption {
+      inherit (format) type;
+      default = { };
+      description = "Contents of ~/.config/direnv/direnv.toml.";
     };
-    nixDirenv = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Enable nix-direnv integration.";
-      };
+
+    nixDirenv.enable = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Install the nix-direnv library.";
+    };
+
+    enableFishIntegration = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Hook direnv into fish when the fish module is enabled.";
     };
   };
 
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    fish.sections.direnv = lib.mkIf (config.fish.enable && cfg.enableFishIntegration) {
-      order = helpers.orders.integrations + 100;
-      text = fishIntegration;
-    };
-
-    direnv.sections.settings = lib.mkIf (cfg.settings != { }) {
-      order = helpers.orders.settings;
-      text = toToml cfg.settings;
-    };
-
     files = lib.mkMerge [
-      (lib.mkIf (cfg.sections != { }) {
-        "direnv/direnv.toml".text = helpers.renderSections {
-          sections = cfg.sections;
-          comment = "#";
-        };
+      (lib.mkIf (cfg.settings != { }) {
+        ".config/direnv/direnv.toml".source = format.generate "direnv.toml" cfg.settings;
       })
       (lib.mkIf cfg.nixDirenv.enable {
-        "direnv/lib/nix-direnv.sh".source = "${pkgs.nix-direnv}/share/nix-direnv/direnvrc";
+        ".config/direnv/lib/nix-direnv.sh".source = "${pkgs.nix-direnv}/share/nix-direnv/direnvrc";
       })
     ];
+
+    # After the other integrations: the hook must wrap the final `cd`.
+    fish.sections.direnv = lib.mkIf (config.fish.enable && cfg.enableFishIntegration) {
+      order = framework.sections.order.after;
+      text = ''
+        if status is-interactive
+          if not functions -q __direnv_export_eval
+            ${direnv} hook fish | source
+          end
+        end
+      '';
+    };
   };
 }

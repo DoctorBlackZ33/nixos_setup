@@ -1,30 +1,31 @@
 { config, lib, pkgs, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
+  inherit (lib) mkOption types;
   cfg = config.gh;
-
-  credentialSettings = builtins.listToAttrs (map
-    (host: {
-      name = host;
-      value.helper = [
-        ""
-        "${cfg.package}/bin/gh auth git-credential"
-      ];
-    })
-    cfg.gitCredentialHelper.hosts);
+  format = pkgs.formats.yaml { };
+  helper = "${lib.getExe cfg.package} auth git-credential";
 in
 {
-  options.gh = helpers.mkProgramOptions { name = "GitHub CLI"; package = pkgs.gh; } // {
+  options.gh = {
+    enable = lib.mkEnableOption "the GitHub CLI";
+    package = lib.mkPackageOption pkgs "gh" { nullable = true; };
+
+    settings = mkOption {
+      inherit (format) type;
+      default = { };
+      description = "Contents of ~/.config/gh/config.yml.";
+    };
+
     gitCredentialHelper = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
+      enable = mkOption {
+        type = types.bool;
         default = true;
-        description = "Configure Git to use gh as a credential helper.";
+        description = "Use gh as the Git credential helper when the git module is enabled.";
       };
-      hosts = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
+      hosts = mkOption {
+        type = types.listOf types.str;
         default = [ "https://github.com" "https://gist.github.com" ];
-        description = "GitHub hosts using the gh credential helper.";
+        description = "Hosts served by the gh credential helper.";
       };
     };
   };
@@ -32,18 +33,13 @@ in
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    gh.sections.settings = {
-      order = helpers.orders.settings;
-      text = lib.generators.toYAML { } ({ version = "1"; } // cfg.settings);
-    };
+    gh.settings.version = lib.mkDefault "1";
 
-    files."gh/config.yml".text = helpers.renderSections {
-      sections = cfg.sections;
-      comment = "#";
-    };
+    files.".config/gh/config.yml".source = format.generate "gh-config.yml" cfg.settings;
 
+    # The empty first entry resets helpers inherited from system git config.
     git.settings.credential = lib.mkIf
       (config.git.enable && cfg.gitCredentialHelper.enable && cfg.package != null)
-      (lib.mkDefault credentialSettings);
+      (lib.genAttrs cfg.gitCredentialHelper.hosts (_: { helper = [ "" helper ]; }));
   };
 }

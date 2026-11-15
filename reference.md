@@ -78,215 +78,171 @@ Use parentheses around mixed arithmetic, list concatenation, updates, and condit
 | Form | Interpretation |
 |---|---|
 | `path:/home/black/experimental` | Explicit local flake URI; avoids ambiguity with a bare path. |
-| `path:/home/black/experimental#nixosConfigurations.desktop` | URI plus `#` attribute selector; selectors traverse attributes with dots. Quote selectors containing `@`, spaces, or shell metacharacters. |
-| `path:./framework` | Relative path input (`inputs.framework.url`). Nix copies the subdirectory as a path flake, so its files must be git-tracked. |
+| `path:/home/black/experimental#nixosConfigurations.desktop` | URI plus `#` attribute selector. Quote selectors containing `@`, spaces, or shell metacharacters. |
+| `path:./framework` | Relative path input. Its files must be git-tracked, and a changed input list needs `nix flake update framework`. |
 | `github:owner/repo` / `github:owner/repo/ref` | GitHub shorthand; `ref` can be branch, tag, or revision. |
-| `./.` / `path:.` | Local flake path; lock metadata records a content hash/mtime and dirty-tree status as applicable. |
-| `#attr` | Output selector shorthand when the flake URI is supplied separately. In shell, quote `path:/home/black/experimental#packages.x86_64-linux."black@desktop"`. |
+| `#attr` | Output selector, e.g. `'path:/home/black/experimental#hjemConfigurations."black@imac"'`. |
 
-Standard output conventions: `packages.<system>.<name>` (buildable packages), `apps.<system>.<name>` (runnable apps), `devShells.<system>.<name>`, `checks.<system>.<name>`, `formatter.<system>`, and `templates`. This repository additionally exposes `nixosConfigurations` and the framework flake exposes a custom `framework` output (`lib`, `homeModules`, `systemModules`, `adapters`); `nix flake check` warns that `framework` is an unknown output name, which is expected.
+Outputs of this repository:
+
+| Output | Contents |
+|---|---|
+| `nixosConfigurations.<name>` | one per deployment whose host is `managed = "nixos"` |
+| `systemConfigs.<name>` | one per `managed = "system-manager"` host |
+| `hjemConfigurations."<user>@<name>"` | one per user on a host that is not NixOS; the value `hjem standalone switch` reads |
+| `checks.<platform>.*` | `nixos-<name>`, `system-<name>`, `home-<user>@<name>`, and `framework-*` |
+| `packages.<system>.{hjem,system-manager,agenix}` | operator tools at the locked revisions (`agenix` only with secrets enabled) |
+| `agenix-rekey` | read by the agenix CLI; only with secrets enabled |
+
+The framework flake exposes `flakeModules.default`, `lib` and `modules`
+(`homeMod`, `nixos`, `systemManager`). `nix flake check` prints
+`unknown flake output` for `modules`, `systemConfigs` and `hjemConfigurations`;
+that is expected.
 
 ### Evaluation, realization, activation
 
 | Stage | What happens | Commands here |
 |---|---|---|
-| Evaluation | Parse/evaluate `flake.nix`, locked inputs, modules, and selected output; errors are type/option/assert/import failures. | `nix flake show`, `nix flake metadata`, `nix eval`, `nix flake check --no-build` |
-| Realization | Build selected derivation and dependencies into `/nix/store`; no system switch. | `nix build`; `nixos-rebuild build` |
-| Activation | Run generated activation logic and change the running system or user home. | `sudo nixos-rebuild switch --flake 'path:/home/black/experimental#desktop'` (use `#laptop` for the other host; applies its Hjem-managed user configuration). |
+| Evaluation | Parse and evaluate the flake and the selected output; type, option and assertion errors appear here. | `nix eval`, `nix flake check --no-build` |
+| Realization | Build derivations into `/nix/store`; nothing is switched. | `nix build`, `nix flake check` |
+| Activation | Change a running system or a home directory. | `nixos-rebuild switch`, `system-manager switch`, `hjem standalone switch` |
 
-### Commands and flags used in this repository
+Evaluation never builds anything here: no module reads a generated file back.
+`--option allow-import-from-derivation false` proves it and is part of the
+check command.
 
-| Command / flag | Effect |
-|---|---|
-| `nix flake show URI` | Summarizes recognized outputs; `framework` appears as an unknown output. |
-| `nix flake metadata URI` | Shows locked URI, fingerprint, and input revisions without switching. |
-| `nix flake check --no-build URI` | Evaluates check derivations without building them. Framework checks fail at evaluation time; the config check forces both toplevels, all contract assertions and standalone outputs. |
-| `nix eval URI#attr --apply builtins.attrNames` | Evaluates an attr set and prints its keys; use `--json` for machine-readable output. |
-| `nix build --no-link URI#attr` | Realizes a derivation without making `./result`; omit `--no-link` to create a result symlink. |
-| `--no-update-lock-file` | Refuses lock-file updates. |
-| `--no-write-lock-file` | Does not write a generated lock file; use with read-only inspection/builds. |
-| `--flake URI` | Select a flake and NixOS output with `nixos-rebuild`. |
-
-Copy-paste queries for the current architecture:
+### Commands
 
 ```sh
 F='path:/home/black/experimental'
 
-nix flake show --no-update-lock-file --no-write-lock-file "$F"
-nix flake metadata --no-update-lock-file --no-write-lock-file "$F"
+# everything, for every platform, evaluation only
+nix flake check --no-build --all-systems --option allow-import-from-derivation false "$F"
 
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations" --apply builtins.attrNames
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#packages.x86_64-linux" --apply builtins.attrNames
+# one deployment
+nix build --no-link "$F#checks.x86_64-linux.nixos-desktop"
 
-nix eval --raw --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.networking.hostName"
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.homeModRequires"
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.provides"
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.assertions" --apply 'xs: builtins.filter (x: !x.assertion) xs'
-nix eval --json --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.warnings"
+# what a host is, what is asked of it, what it supplies
+nix eval --json "$F#nixosConfigurations.desktop.config.contract.facts"
+nix eval --json "$F#nixosConfigurations.desktop.config.contract.provides.services"
+nix eval --json "$F#nixosConfigurations.desktop.config.contract.wanted" \
+  --apply 'w: builtins.mapAttrs (_: kind: builtins.mapAttrs (_: want: want.sources) kind) w'
 
-nix eval --raw --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.hjem.users.black.homeMod.files.\"hypr/hyprland.lua\".text"
-nix eval --raw --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.laptop.config.hjem.users.black.homeMod.files.\"quickshell/black/DesktopPolicy.qml\".text"
+# a generated user file
+nix eval --raw "$F#nixosConfigurations.desktop.config.hjem.users.black.homeMod.files.\".config/hypr/hyprland.lua\".text"
+
+# activation
+sudo nixos-rebuild switch --flake "$F#desktop"
+nix run "$F#system-manager" -- switch --flake "$F#<name>" --sudo
+nix run "$F#hjem" -- standalone switch --flake "$F" --flake-attr 'hjemConfigurations."<user>@<name>"'
 ```
 
-Build hosts and standalone outputs without activation or lock writes:
-
-```sh
-nix build --no-link --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.desktop.config.system.build.toplevel"
-nix build --no-link --no-update-lock-file --no-write-lock-file \
-  "$F#nixosConfigurations.laptop.config.system.build.toplevel"
-nix build --no-link --no-update-lock-file --no-write-lock-file \
-  "$F#packages.x86_64-linux.\"black@desktop\""
-nix build --no-link --no-update-lock-file --no-write-lock-file \
-  "$F#packages.x86_64-linux.\"black@desktop-packages\""
-nix build --no-link --no-update-lock-file --no-write-lock-file \
-  "$F#packages.x86_64-linux.\"black@desktop-env\""
-```
-
-Framework checks (reconcile fixtures, contract types, home module evaluation):
-
-```sh
-nix flake check --no-build 'path:/home/black/experimental/framework'
-```
-
-`checks.x86_64-linux.*` derivations there are empty; the assertions run during
-evaluation, so a broken fixture fails `nix flake check` with the case name.
-
-## 3. flake-parts semantics
-
-### Module scopes and arguments
-
-`flake-parts.lib.mkFlake { inherit inputs; } module` runs a Nix module system whose final `config.flake` becomes flake outputs. `config` and `options` are the flake-parts module-system state, not NixOS, Hjem, or homeMod state.
-
-| Scope | Common module arguments | What `config` means | What this repo uses |
-|---|---|---|---|
-| Top-level flake-parts module | `config`, `options`, `lib`, `inputs`, `self`, `getSystem`, `moduleWithSystem`, `withSystem`; `system`/`pkgs` are not generally available here. | Global flake-parts options, including `config.flake` and `config.perSystem`. | `deployments.nix` and `checks.nix` in the config flake; `checks/default.nix` in the framework flake. |
-| `perSystem = { system, pkgs, ... }: { ... }` | `system`, `pkgs`, `self'`, `inputs'`, plus module `config`/`lib`; only explicitly named function parameters are passed. | The current system's per-system option namespace. | Standalone packages, formatter, devShell, and check derivations. |
-| NixOS module | `config`, `options`, `lib`, `pkgs`, `modulesPath`, and declared special args. | NixOS option tree. | hostConf, framework system modules, the NixOS adapter. |
-| Hjem user module | `config`, `options`, `lib`, `pkgs`, `osConfig`, `osOptions`, `hjem-lib`, `utils`. | Hjem user options plus the nested `homeMod` option. | `framework/adapters/hjem.nix`, which declares the `homeMod` class. |
-| homeMod module | `config`, `options`, `lib`, special args `pkgs`, `facts`. | homeMod options: `files`, `packages`, `environment`, `requires`, and program options. | `framework/home/*.nix`, `users/<user>`, `hosts/<host>/users/<user>.nix`. |
-
-`inputs` is the root input set; `self` is the final flake output set. `withSystem` bridges a top-level output to `pkgs` for a system; this repository builds standalone packages in `perSystem` instead.
-
-### Options, definitions, imports, and priorities
-
-| Construct | Exact role |
+| Flag | Effect |
 |---|---|
-| `options.<path> = lib.mkOption { type; default; description; };` | Declares an option schema. |
-| `config.<path> = value;` | Defines an option; definitions merge through the option type. |
-| `lib.mkDefault` / `lib.mkForce` / `lib.mkOverride n` | Change definition priority. Host role values use plain definitions; shared defaults use `mkDefault`. |
-| `lib.mkIf condition { ... }` | Delays conditional definitions; the condition is forced when the option merges, not while definitions are collected. Use this for anything derived from `config` (see the adapter note in section 4). |
-| `lib.mkAfter` / `lib.mkBefore` | Raise/lower list-definition priority; the host Hyprland fragment is appended with `lib.mkAfter`. |
-| `imports = [ module-or-path ... ];` | Recursively imports modules before option/config merging. |
-| `flake.<output> = value;` | Defines a top-level flake output; the framework flake's `framework` attribute is a plain value, not a transposed per-system option. |
+| `--no-build` | Evaluate check derivations without building them. |
+| `--all-systems` | Also evaluate checks of platforms other than the current one. |
+| `--no-update-lock-file` | Refuse lock-file changes; use it to prove the committed locks are complete. |
+| `--no-link` | Build without creating a `result` symlink. |
 
-Two failure modes hit this repository and are worth remembering:
+## 3. Module-system notes
 
-- **Fixed-point cycles.** Hjem builds the `users` option type from `hjem.extraModules`. A module that both sets `hjem.extraModules` and reads `config.hjem.users` creates a cycle that silently degrades to the empty default. Registration therefore lives in `framework/adapters/hjem-register.nix`, separate from the adapter that reads users.
-- **Eager forcing in definition sets.** `lib.optional cond value` forces `cond` while definitions are collected. `assertions = lib.optional (result.errors != [ ]) …` therefore recursed; it is written as `lib.mkIf (result.errors != [ ]) [ … ]` instead.
+### Which module sees what
+
+| Scope | Arguments | Files |
+|---|---|---|
+| flake-parts module | `config`, `lib`, `inputs`, `self`; `pkgs` only inside `perSystem` | `flake.nix`, `framework/flake-module.nix` |
+| NixOS module | `config`, `lib`, `pkgs`, `framework`, plus `framework.moduleArgs` | hostConf, `framework/system/**`, `framework/adapters/nixos*.nix` |
+| system-manager module | same arguments, far fewer options | hostConf of such hosts, `framework/system/common` |
+| Hjem user module | `config`, `lib`, `pkgs`, `osConfig` | `framework/adapters/hjem.nix` only |
+| homeMod module | `config`, `lib`, `pkgs`, `facts`, `inputs` (the framework's), `framework`, `secretsDirectory`, plus `framework.moduleArgs` | `framework/home/*.nix`, `users/<user>`, `hosts/<host>/users/<user>.nix` |
+
+A homeMod module cannot read NixOS options: it is a different module class and
+receives no `osConfig`.
+
+### Traps found in this repository
+
+| Trap | Consequence | What the code does instead |
+|---|---|---|
+| `lib.mkIf false { some.option = …; }` where `some.option` is not declared | "option does not exist", even though the condition is false | Modules are split by class: `system/common` loads under system-manager, `system/nixos` does not |
+| One module sets `hjem.extraModules` and reads `config.hjem.users` | The user set is silently empty: Hjem builds the type of `users` from `extraModules` | `hjem-register.nix` registers, `nixos-users.nix` reads |
+| `lib.optional cond x` or `map f (attrNames …)` in a definition set, with `cond` derived from the user layer | Forced while definitions are collected: recursion, or an empty result | `lib.mkIf`, or the value of an option |
+| `mkIf false` on an attribute of a freeform set (flake outputs) | The attribute exists and throws when touched | `lib.optionalAttrs` |
+| `builtins.readFile` of a `pkgs.formats` output | A build during evaluation; fails for a foreign platform | `source = format.generate …` |
+| `types.lines` with several definitions of equal priority | Order follows module order, which is not stable | Named sections with an explicit `order` |
+| An option default such as `{ }` on a submodule-typed option | The default bypasses the type, so nested defaults are missing | No default: the type supplies the empty value |
 
 ## 4. This repository: graph and data flow
 
-### Root and input graph
+### Inputs
 
-`/home/black/experimental/flake.nix` declares these locked inputs:
+The root `flake.nix` pins every dependency; the framework declares the same
+inputs and follows them, so the root lock decides what is deployed.
 
-| Input | URL / relation | Consumers |
-|---|---|---|
-| `nixpkgs` | pinned NixOS 26.05 nar | NixOS systems, Hjem, standalone packages, framework checks via follows |
-| `hjem` | `github:feel-co/hjem`; follows `nixpkgs` | `hjem.nixosModules.default` and the user layer |
-| `nvf` | `github:NotAShelf/nvf`; follows root `nixpkgs` | `homeMod.nvf` via `_module` arg from the deployment |
-| `framework` | `path:./framework`; `nixpkgs` and `flake-parts` follow the root inputs | homeMod/systemMod modules, contract, reconcile, adapters |
-| `flake-parts` | `github:hercules-ci/flake-parts` | `mkFlake` in both flakes |
-
-The framework flake pins its own `nixpkgs` for standalone checks; the config
-flake overrides it with `follows`. Because `framework` is a path input, every
-file under `framework/` must be git-tracked before evaluation.
-
-### Framework outputs
-
-`inputs.framework.framework` is a plain attrset:
-
-| Key | Contents |
+| Input | Used for |
 |---|---|
-| `lib.contract` | `{ lib }:` function returning `requiresType`, `providesType`, `factsType`, `emptyRequires`, `emptyProvides`, `normaliseRequires`, `mergeRequires`. |
-| `lib.reconcile` | `{ lib }:` function returning `reconcile { requires, provides, facts; }` and `factValue`. |
-| `lib.helpers` | section type/renderer, `mkProgramOptions`, conventional section orders. |
-| `homeModules` | name → path: `core`, `hyprland`, `fish`, `git`, `gh`, `direnv`, `yazi`, `zoxide`, `fuzzel`, `mako`, `quickshell`, `nvf`. |
-| `systemModules` | name → path: `base`, `nix-settings`, `development`, `networking`, `desktop`, `locale`, `greeter`, `accounts`. |
-| `adapters` | `contract` (facts/provides/requires options), `hjem-register`, `hjem` (user module), `nixos`, `standalone` (function). |
+| `nixpkgs` | every host and user |
+| `flake-parts` | both flakes |
+| `hjem` | user layer on NixOS (module) and elsewhere (`hjem standalone`) |
+| `system-manager` | system layer on non-NixOS hosts; its release branch must match the nixpkgs release |
+| `nvf` | `framework/home/nvf.nix` |
+| `agenix`, `agenix-rekey` | secrets provider, imported only when `framework.secrets` is set |
+| `framework` | `path:./framework` |
 
-The NixOS adapter imports every framework home module into the `homeMod`
-submodule; adding `framework/home/<program>.nix` is enough for it to be
-available to users (still gated by its `enable` option).
+`framework/flake.lock` is only used when the framework's checks run on their
+own; it is kept at the same revisions. The root flake runs the same checks
+against its own lock as `checks.<system>."framework-*"`.
 
-### data flow
+### From inventory to outputs
 
-1. `deployments.nix` maps a target to hostConf, the framework module set and
-   one homeMod composition per user.
-2. Each user's `homeMod` evaluates framework home modules + `users/<user>` +
-   `hosts/<host>/users/<user>.nix` with `facts` and `pkgs` as special args.
-3. The NixOS adapter unions `config.requires` (systemMod) with each enabled
-   user's `homeMod.requires`, fulfils known capabilities, computes `provides`
-   from the resulting NixOS config, and reconciles.
-4. reconcile errors become a single failing assertion; warnings become
-   `config.warnings`. `config.homeModRequires` exposes the union read-only so
-   system modules can gate themselves (the desktop module enables graphics and
-   fonts only when a user requires a portal).
-5. Hjem receives `homeMod.files` as `xdg.config.files`, `packages` as user
-   packages, and `environment` as `environment.sessionVariables`.
+1. `deployments.nix` names a deployment, its host directory and its users.
+2. `framework/lib/facts.nix` turns `hosts/<host>/facts.nix` plus an optional
+   `facter.json` into one typed value. Hand-written facts win; `null` means
+   unknown.
+3. `framework/lib/fleet.nix` validates names and files, then builds what
+   `facts.managed` asks for:
+   - `nixos`: `system/common` + `system/nixos` + hostConf, and, if the
+     deployment has users, Hjem with one `homeMod` per user;
+   - `system-manager`: `system/common` + hostConf; the users' requirements are
+     passed in as data;
+   - `manual`: nothing for the system.
+   Users on the last two are evaluated on their own and exported as
+   `hjemConfigurations`.
+4. Every evaluation collects requests by source (`system`, `user <name>`),
+   merges them into `contract.wanted`, lets provider modules react, and
+   reconciles against `contract.provides` and the facts. Errors become one
+   failing assertion (or a `throw` for standalone users), warnings become
+   warnings.
+5. Each deployable thing becomes a check for its own platform.
 
-### Policy values and outputs
+### Where things live
 
-Role differences are pure values in `hosts/<host>/users/black.nix`:
+| Path | Holds |
+|---|---|
+| `framework/lib/capabilities.nix` | the table of capability kinds; types, merging and reconcile derive from it |
+| `framework/lib/{contract,reconcile,facts,inventory,fleet,home,sections,modules}.nix` | types, pure logic, the builder |
+| `framework/home/` | one module per program: mechanism only |
+| `framework/system/common/` | modules that also load under system-manager |
+| `framework/system/nixos/` | NixOS modules; `desktop.nix`, `audio.nix`, `pam.nix` are capability providers |
+| `framework/system/optional/` | providers enabled by a flake setting (`agenix.nix`) |
+| `framework/adapters/` | translation only: contract wiring, NixOS, Hjem, standalone, system-manager |
+| `framework/checks/` | unit checks and the synthetic fleet |
+| `users/black/` | `cli.nix`, `development.nix`, `desktop.nix`, `nvim.nix`, each gated on `facts.kind`, plus Hyprland and Quickshell sources |
+| `hosts/common/` | hardware and values shared by the two reference hosts |
+| `hosts/<host>/` | facts, optional report, hostConf, optional per-user override |
 
-| Value | desktop | laptop |
+### Generated user files
+
+Paths are relative to the home directory.
+
+| Kind | Mechanism | Examples |
 |---|---|---|
-| `hyprland.floatingToggleChord` | `SUPER + SPACE` | `SUPER + V` |
-| `quickshell.clockPrecision` | `SystemClock.Seconds` | `SystemClock.Minutes` |
-| `quickshell.clockFormat` | `yyyy-MM-dd HH:mm:ss` | `yyyy-MM-dd HH:mm` |
-| `quickshell.label` | `desktop` | `laptop` |
+| Structured | `settings` typed by `pkgs.formats`, written with `format.generate` | git, gh, direnv, yazi, fuzzel, mako |
+| Assembled text | named `sections` with `order` (500 before, 1000 default, 1500 after), replaceable or disabled by name | `config.fish`, `hyprland.lua`, `DesktopPolicy.qml` |
+| Sources | paths handed through unchanged | Hyprland fragments, Quickshell trees |
 
-Both hosts append `hosts/common/hypr-vm.lua` with `lib.mkAfter`. The generated
-`hypr/hyprland.lua` contains the sections `settings` (from
-`hyprland.settings` via `lib.generators.toLua`), `sources` (`dofile` lines for
-`hyprland.fragments`), `policy` (the floating-toggle binding) and `startup`
-(`hl.on("hyprland.start", …)` for `hyprland.startupCommands`), in that order.
-
-`hosts/<host>/facts.nix` is pure data: typed `facts` plus declared `provides`.
-The NixOS adapter uses its computed provides for reconciliation; the standalone
-adapter reconciles against the declared values, because it cannot introspect
-the target OS.
-
-### Source boundaries
-
-- `framework/`: general modules, contract, reconcile, adapters, checks.
-- `users/black/`: user-owned Hyprland fragments, Quickshell tree and user
-  settings, plus profiles and preferences.
-- `hosts/common/`: shared VM hardware and host values.
-- `hosts/<host>/`: facts, host values, role-specific user override.
-- `deployments.nix` and `checks.nix`: output composition and evaluation
-  checks only; no configuration values.
-
-### Verification performed
-
-- `nix flake check --no-build path:/home/black/experimental/framework`: seven
-  evaluation-time checks pass (reconcile clean/required/optional, contract
-  types, home modules, Hyprland rendering and ordering, other rendering).
-- `nix flake check --no-build path:/home/black/experimental`: both deployments
-  evaluate, all contract assertions hold, standalone outputs derive.
-- `nix build` of `nixosConfigurations.{desktop,laptop}.config.system.build.toplevel`
-  and of `packages.x86_64-linux."black@desktop"{,-packages,-env}` succeeds.
-- No switch or activation was run.
+`hyprland.lua` sections, in order: `settings` (`hl.config` from
+`hyprland.settings`), `sources` (`dofile` per fragment), `policy` (the
+floating-toggle chord, if set), `startup`.
 
 ## 5. Further reference
 

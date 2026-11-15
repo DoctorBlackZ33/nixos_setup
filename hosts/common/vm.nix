@@ -1,9 +1,9 @@
-# Shared hostConf values for the two simulated VM hosts.
+# Values shared by the two reference hosts, which both describe the same
+# libvirt guest. Real hosts get their own hardware file and their own values.
 { pkgs, ... }:
 {
   imports = [ ./vm-hardware.nix ];
 
-  nixpkgs.hostPlatform = "x86_64-linux";
   boot.kernelPackages = pkgs.linuxPackages;
 
   sysMod.locale = {
@@ -12,9 +12,11 @@
     keyMap = "us";
   };
 
-  sysMod.greeter = {
+  # The guest is reached with a password from the libvirt network only. A real
+  # host lists `authorizedKeys` instead and leaves password logins off.
+  sysMod.ssh = {
     enable = true;
-    user = "black";
+    passwordAuthentication = true;
   };
 
   sysMod.accounts.black = {
@@ -25,18 +27,10 @@
       "video"
       "input"
     ];
-    shell = pkgs.fish;
-    # Bootstrap-only VM password. Change this value before using the VM for
-    # anything sensitive.
+    shell = "fish";
+    # Bootstrap password of the throwaway guest; it is readable in the store.
+    # A real host uses `hashedPasswordFile` backed by a secret.
     hashedPassword = "$6$nixosdev$QyqUycwLZRiiEsmZ4jzHtrAwIZ8EdPikwJnmrFAygYLP9/LO2wGcFGF4UrykL8niiDRN76b8ayhPtTAG/Pj7x1";
-  };
-
-  # The simulated hosts have no physical GPU. Force guest compositor and
-  # OpenGL work onto software rendering, like the existing VM host.
-  environment.sessionVariables = {
-    LIBGL_ALWAYS_SOFTWARE = "1";
-    WLR_RENDERER_ALLOW_SOFTWARE = "1";
-    WLR_NO_HARDWARE_CURSORS = "1";
   };
 
   system.stateVersion = "26.05";

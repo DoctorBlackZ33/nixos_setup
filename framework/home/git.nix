@@ -1,22 +1,24 @@
 { config, lib, pkgs, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
   cfg = config.git;
+  format = pkgs.formats.gitIni { listsAsDuplicateKeys = true; };
 in
 {
-  options.git = helpers.mkProgramOptions { name = "git"; package = pkgs.git; };
+  options.git = {
+    enable = lib.mkEnableOption "git";
+    package = lib.mkPackageOption pkgs "git" { nullable = true; };
+
+    settings = lib.mkOption {
+      inherit (format) type;
+      default = { };
+      example = { init.defaultBranch = "main"; };
+      description = "Contents of ~/.config/git/config.";
+    };
+  };
 
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    git.sections.settings = lib.mkIf (cfg.settings != { }) {
-      order = helpers.orders.settings;
-      text = lib.generators.toGitINI cfg.settings;
-    };
-
-    files."git/config".text = helpers.renderSections {
-      sections = cfg.sections;
-      comment = "#";
-    };
+    files.".config/git/config".source = format.generate "git-config" cfg.settings;
   };
 }

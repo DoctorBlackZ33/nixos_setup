@@ -1,30 +1,26 @@
 { config, lib, pkgs, ... }:
 let
-  helpers = import ../lib/helpers.nix { inherit lib; };
   cfg = config.mako;
-  keyValue = lib.generators.toKeyValue {
-    mkKeyValue = lib.generators.mkKeyValueDefault { } "=";
-  };
+  format = pkgs.formats.iniWithGlobalSection { };
 in
 {
-  options.mako = helpers.mkProgramOptions { name = "mako"; package = pkgs.mako; };
+  options.mako = {
+    enable = lib.mkEnableOption "mako";
+    package = lib.mkPackageOption pkgs "mako" { nullable = true; };
+
+    settings = lib.mkOption {
+      inherit (format) type;
+      default = { };
+      example = { globalSection.default-timeout = 3000; };
+      description = "Contents of ~/.config/mako/config: `globalSection` plus criteria `sections`.";
+    };
+  };
 
   config = lib.mkIf cfg.enable {
     packages = lib.optional (cfg.package != null) cfg.package;
 
-    mako.sections.defaults = {
-      order = helpers.orders.defaults;
-      text = builtins.readFile ./defaults/mako-config;
-    };
-
-    mako.sections.settings = lib.mkIf (cfg.settings != { }) {
-      order = helpers.orders.defaults + 10;
-      text = keyValue cfg.settings;
-    };
-
-    files."mako/config".text = helpers.renderSections {
-      sections = cfg.sections;
-      comment = "#";
+    files = lib.mkIf (cfg.settings != { }) {
+      ".config/mako/config".source = format.generate "mako-config" cfg.settings;
     };
   };
 }
