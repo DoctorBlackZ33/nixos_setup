@@ -177,14 +177,17 @@ uses (`inputs`, `pkgs`, `facts`, `framework`) are rejected.
 | Name | What it shows |
 |---|---|
 | `desktop` | The libvirt guest as a workstation: facts from `facter.json`, greeter, development tools, audio requested by the host, `black` with Hyprland and Quickshell |
+| `latitude` | The bare-metal Dell Latitude 5420: ZFS root on a dedicated NVMe partition, shared ESP with NixOS GRUB entries for Arch and Windows, greeter, audio and the same `black` session |
 | `server` | The same guest as a server: networkd, no compositor, no compilers; `black` gets only the shell profile because the user profiles gate on `facts.kind` |
 
-`black`'s account (uid 1000, fish) comes from `users/black/account.nix`; both
-hosts import `hosts/common/vm.nix`, which adds the same groups and the guest's
-password. Both keep password SSH for the throwaway guest. A real host gets keys
-from the user's `authorizedKeys`, plus any its own
+`black`'s account (uid 1000, fish) comes from `users/black/account.nix`; the
+two guests import `hosts/common/vm.nix`, which adds the same groups and the
+guest's password. Both keep password SSH for the throwaway guest. A real host
+gets keys from the user's `authorizedKeys`, plus any its own
 `sysMod.accounts.<user>.authorizedKeys` adds, and leaves password logins off;
-the build refuses a key-only sshd that nobody could log into.
+the build refuses a key-only sshd that nobody could log into. `latitude` is a
+real host: its password hash lives in `hosts/latitude/default.nix` until a
+`hashedPasswordFile` secret exists, and it runs no sshd.
 
 ## Secrets
 

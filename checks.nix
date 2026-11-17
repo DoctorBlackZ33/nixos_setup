@@ -63,7 +63,8 @@ in
       "framework/flake.lock agrees with flake.lock at every shared input path (run `nix run .#sync-framework-lock`)" = lockGraph.drifted == [ ];
       ${nixpkgsCondition} = divergentNixpkgs == [ ];
 
-      "black is deployed to both reference hosts" = hostsOf "black" == [ "desktop" "server" ];
+      "black is deployed to both reference hosts" =
+        lib.all (host: lib.elem host (hostsOf "black")) [ "desktop" "server" ];
       "black is the same account on every host" = sameEverywhere "black";
       "black's account comes from users/black/account.nix" =
         account "desktop" "black" == { inherit (accountFile "black") uid description shell; };
