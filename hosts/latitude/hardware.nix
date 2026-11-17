@@ -13,35 +13,15 @@
     fsType = "vfat";
   };
 
-  boot.loader.grub = {
+  # The ESP is shared with Arch and Windows. Arch's GRUB owns /boot/grub and
+  # rewrites it on every package transaction (grub-btrfs), so NixOS must not
+  # keep its menu there: systemd-boot uses /boot/loader and /boot/EFI/systemd,
+  # which GRUB never writes. Arch's GRUB gains a chainload entry for it.
+  boot.loader.systemd-boot = {
     enable = true;
-    device = "nodev";
-    efiSupport = true;
-    efiInstallAsRemovable = false;
-    zfsSupport = true;
-
-    # /boot is shared, so keep the menu and its kernels bounded.
     configurationLimit = 5;
-
-    # The other operating systems that already use this ESP. Explicit entries:
-    # os-prober would have to guess the btrfs subvolume and the Windows loader.
-    extraEntries = ''
-      menuentry "Arch Linux" --class arch --class gnu-linux {
-        insmod part_gpt
-        insmod fat
-        search --no-floppy --fs-uuid --set=root 3DE4-5FED
-        linux /vmlinuz-linux root=UUID=8cb1c893-19ba-4faa-ba4c-0c0b145bc4dc rw rootflags=subvol=@ rootfstype=btrfs zswap.enabled=0 quiet loglevel=3 udev.log-priority=3 i915.modeset=1 splash fbcon=nodefer
-        initrd /intel-ucode.img /initramfs-linux.img
-      }
-
-      menuentry "Windows Boot Manager" --class windows {
-        insmod part_gpt
-        insmod fat
-        search --no-floppy --fs-uuid --set=root 3DE4-5FED
-        chainloader /EFI/Microsoft/Boot/bootmgfw.efi
-      }
-    '';
   };
+  boot.loader.timeout = 5;
 
   boot.loader.efi.efiSysMountPoint = "/boot";
   boot.loader.efi.canTouchEfiVariables = true;
