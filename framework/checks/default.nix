@@ -150,7 +150,7 @@ let
       hyprland = {
         enable = true;
         settings.general.gaps_in = 5;
-        fragments = [ "fragment.lua" ];
+        fragments = [ ./fragment.lua ];
         startupCommands = [ "quickshell --config check" ];
         floatingToggleChord = "SUPER + SPACE";
       };
@@ -496,6 +496,7 @@ in
 
   home-hyprland = mkCheck "home-hyprland" {
     "settings are rendered as Lua" = lib.hasInfix "[\"gaps_in\"] = 5" hyprlandLua;
+    "fragments are inlined" = lib.hasInfix "fragment inlined by the hyprland check" hyprlandLua;
     "sections keep their order" =
       builtins.match ".*SECTION: settings.*SECTION: sources.*SECTION: policy.*SECTION: startup.*" hyprlandLua != null;
     "the chord is a value" = lib.hasInfix "hl.bind(\"SUPER + SPACE\"" hyprlandLua;

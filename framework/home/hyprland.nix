@@ -19,7 +19,7 @@ in
     fragments = mkOption {
       type = types.listOf (types.either types.path types.str);
       default = [ ];
-      description = "Lua files loaded in order after the settings.";
+      description = "Lua files inlined in order after the settings.";
     };
 
     startupCommands = mkOption {
@@ -47,7 +47,7 @@ in
 
       sources = lib.mkIf (cfg.fragments != [ ]) {
         text = lib.concatMapStringsSep "\n"
-          (fragment: "dofile(${builtins.toJSON (toString fragment)})")
+          (fragment: builtins.readFile fragment)
           cfg.fragments;
       };
 

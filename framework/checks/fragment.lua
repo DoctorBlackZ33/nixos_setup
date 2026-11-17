@@ -1,0 +1,1 @@
+-- fragment inlined by the hyprland check
