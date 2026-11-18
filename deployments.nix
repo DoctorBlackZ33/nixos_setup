@@ -11,4 +11,5 @@
   desktop = { users = [ "black" ]; };
   latitude = { users = [ "black" ]; };
   server = { users = [ "black" ]; };
+  dev-vm = { users = [ "black" ]; };
 }
