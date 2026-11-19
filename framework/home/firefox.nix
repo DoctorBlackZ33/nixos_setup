@@ -72,6 +72,7 @@ in
       BackgroundAppUpdate = cfg.BackgroundAppUpdate;
       DisableTelemetry = cfg.DisableTelemetry;
       HardwareAcceleration = cfg.HardwareAcceleration;
+      
       ExtensionSettings = let
         moz = short: "https://addons.mozilla.org/firefox/downloads/latest/${short}/latest.xpi";
       in (lib.concatMapAttrs (key: value: {
@@ -81,7 +82,16 @@ in
           updates_disabled = true;
         };
       }) cfg.Extensions) // { "*".installation_mode = "blocked"; };
-    #TODO: Map extension settings 
+      
+      "3rdparty".Extensions = lib.concatMapAttrs (key: value: {
+        ${value.id} = value.configuration;
+      }) cfg.Extensions;
+
+      profiles.default.search = {
+        force = true;
+        default = cfg.DefaultSearchEngine;
+        privateDefault = cfg.DefaultSearchEngine;
+      };
     };
   };
 }

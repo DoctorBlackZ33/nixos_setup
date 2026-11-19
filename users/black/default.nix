@@ -8,5 +8,6 @@
     ./development.nix
     ./desktop.nix
     ./nvim.nix
+    ./browsers.nix
   ];
 }
