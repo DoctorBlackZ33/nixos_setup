@@ -3,7 +3,8 @@
 # own; both get the same modules and the same arguments (R7).
 { lib, inputs, framework }:
 let
-  moduleSet = framework.modules.discover ../home;
+  # References are opt-in replacements, never a second automatic Firefox module.
+  moduleSet = removeAttrs (framework.modules.discover ../home) [ "firefox-reference" ];
 
   # R3: the user layer sees host facts, packages, the framework's inputs and
   # whatever the config flake passes as `moduleArgs`. From the system layer it

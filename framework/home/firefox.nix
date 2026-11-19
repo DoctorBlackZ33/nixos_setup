@@ -1,13 +1,12 @@
-{ config, lib, framework, ... }:
+{ config, lib, pkgs, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (framework) sections;
   cfg = config.firefox;
 in
 {
   options.firefox = {
     enable = lib.mkEnableOption "the Firefox user configuration";
-    
+    package = lib.mkPackageOption pkgs "firefox" { nullable = true; };
     #TODO: add settings and sections if userChrome.css is wanted
 
     AppAutoUpdate = mkOption {
@@ -67,7 +66,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    firefox = {
+    packages = lib.optional (cfg.package != null) cfg.package;
+    programs.firefox = {
       AppAutoUpdate = cfg.AppAutoUpdate;
       BackgroundAppUpdate = cfg.BackgroundAppUpdate;
       DisableTelemetry = cfg.DisableTelemetry;
